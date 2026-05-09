@@ -1058,6 +1058,70 @@ static bool WasmThreadsEnabled(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool GetWasmSupportedFeatures(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject features(cx, JS_NewPlainObject(cx));
+  if (!features) {
+    return false;
+  }
+  RootedValue value(cx);
+
+#define WASM_FEATURE(NAME, SHORT_NAME, COMPILE_PRED, ...)  \
+  value.setBoolean(COMPILE_PRED ? true : false);           \
+  if (!JS_SetProperty(cx, features, #SHORT_NAME, value)) { \
+    return false;                                          \
+  }
+  JS_FOR_WASM_FEATURES(WASM_FEATURE);
+#undef WASM_FEATURE
+
+#ifdef ENABLE_WASM_SIMD
+  value.setBoolean(true);
+#else
+  value.setBoolean(false);
+#endif
+  if (!JS_SetProperty(cx, features, "simd", value)) {
+    return false;
+  }
+
+  value.setBoolean(true);
+  if (!JS_SetProperty(cx, features, "threads", value)) {
+    return false;
+  }
+
+  args.rval().setObject(*features.get());
+  return true;
+}
+
+static bool GetWasmEnabledFeatures(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject features(cx, JS_NewPlainObject(cx));
+  if (!features) {
+    return false;
+  }
+  RootedValue value(cx);
+
+#define WASM_FEATURE(NAME, SHORT_NAME, ...)                \
+  value.setBoolean(wasm::NAME##Available(cx));             \
+  if (!JS_SetProperty(cx, features, #SHORT_NAME, value)) { \
+    return false;                                          \
+  }
+  JS_FOR_WASM_FEATURES(WASM_FEATURE);
+#undef WASM_FEATURE
+
+  value.setBoolean(wasm::SimdAvailable(cx));
+  if (!JS_SetProperty(cx, features, "simd", value)) {
+    return false;
+  }
+
+  value.setBoolean(wasm::ThreadsAvailable(cx));
+  if (!JS_SetProperty(cx, features, "threads", value)) {
+    return false;
+  }
+
+  args.rval().setObject(*features.get());
+  return true;
+}
+
 #define WASM_FEATURE(NAME, ...)                                              \
   static bool Wasm##NAME##Enabled(JSContext* cx, unsigned argc, Value* vp) { \
     CallArgs args = CallArgsFromVp(argc, vp);                                \
@@ -9669,11 +9733,7 @@ static bool BaselineCompile(JSContext* cx, unsigned argc, Value* vp) {
       returnedStr = "baseline disabled";
       break;
     }
-    if (script->length() > jit::BaselineMaxScriptLength ||
-        script->nslots() > jit::BaselineMaxScriptSlots) {
-      script->disableBaselineCompile();
-    }
-    if (!script->canBaselineCompile()) {
+    if (!jit::CanBaselineCompileScript(cx, script)) {
       returnedStr = "can't compile";
       break;
     }
@@ -9759,6 +9819,103 @@ static bool HasBaselineHint(JSContext* cx, unsigned argc, Value* vp) {
   bool hasHint = jitHints->mightHaveEagerBaselineHint(script);
 
   args.rval().setBoolean(hasHint);
+  return true;
+}
+
+static bool RecordIonCompilationForHints(JSContext* cx, unsigned argc,
+                                         Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (args.length() != 1) {
+    ReportUsageErrorASCII(cx, callee, "Wrong number of arguments");
+    return false;
+  }
+
+  RootedScript script(cx, TestingFunctionArgumentToScript(cx, args[0]));
+  if (!script) {
+    return false;
+  }
+
+  if (!cx->runtime()->jitRuntime() ||
+      !cx->runtime()->jitRuntime()->hasJitHintsMap() ||
+      !script->hasJitScript()) {
+    args.rval().setUndefined();
+    return true;
+  }
+
+  jit::JitHintsMap* jitHints = cx->runtime()->jitRuntime()->getJitHintsMap();
+  jitHints->setEagerBaselineHint(script);
+  if (!jitHints->recordIonCompilation(script)) {
+    return false;
+  }
+
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool HasMegamorphicIC(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (args.length() != 1) {
+    ReportUsageErrorASCII(cx, callee, "Wrong number of arguments");
+    return false;
+  }
+
+  RootedScript script(cx, TestingFunctionArgumentToScript(cx, args[0]));
+  if (!script) {
+    return false;
+  }
+
+  if (!script->hasJitScript()) {
+    args.rval().setBoolean(false);
+    return true;
+  }
+
+  uint32_t numEntries = script->jitScript()->numICEntries();
+  for (uint32_t i = 0; i < numEntries; i++) {
+    jit::ICState::Mode mode =
+        script->jitScript()->fallbackStub(i)->state().mode();
+    if (mode >= jit::ICState::Mode::Megamorphic) {
+      args.rval().setBoolean(true);
+      return true;
+    }
+  }
+
+  args.rval().setBoolean(false);
+  return true;
+}
+
+static bool ResetFallbackStubStates(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (args.length() != 1) {
+    ReportUsageErrorASCII(cx, callee, "Wrong number of arguments");
+    return false;
+  }
+
+  RootedScript script(cx, TestingFunctionArgumentToScript(cx, args[0]));
+  if (!script) {
+    return false;
+  }
+
+  if (!script->hasJitScript()) {
+    args.rval().setUndefined();
+    return true;
+  }
+
+  jit::ICScript* icScript = script->jitScript()->icScript();
+  uint32_t numEntries = script->jitScript()->numICEntries();
+  JS::Zone* zone = script->zone();
+  for (uint32_t i = 0; i < numEntries; i++) {
+    jit::ICFallbackStub* stub = script->jitScript()->fallbackStub(i);
+    stub->discardStubs(zone, &icScript->icEntry(i));
+    stub->state().reset();
+  }
+
+  args.rval().setUndefined();
   return true;
 }
 
@@ -10687,6 +10844,14 @@ gc::ZealModeHelpText),
 "  always succeed, only that it can succeed in principle.  The addressType is a string,"
 "  'i32' or 'i64'."),
 
+    JS_FN_HELP("getWasmSupportedFeatures", GetWasmSupportedFeatures, 0, 0,
+"getWasmSupportedFeatures()",
+"  Get the wasm features SpiderMonkey was built with support for.\n"),
+
+    JS_FN_HELP("getWasmEnabledFeatures", GetWasmEnabledFeatures, 0, 0,
+"getWasmEnabledFeatures()",
+"  Get the wasm features that are runtime enabled in SpiderMonkey.\n"),
+
 #define WASM_FEATURE(NAME, ...) \
     JS_FN_HELP("wasm" #NAME "Enabled", Wasm##NAME##Enabled, 0, 0, \
 "wasm" #NAME "Enabled()", \
@@ -11182,6 +11347,18 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
     JS_FN_HELP("hasBaselineHint", HasBaselineHint, 1, 0,
 "hasBaselineHint(fun)",
 "  Returns true if the given function has a baseline JIT hint set.\n"),
+    JS_FN_HELP("recordIonCompilationForHints", RecordIonCompilationForHints, 1,
+               0,
+"recordIonCompilationForHints(fun)",
+"  Records Ion compilation hints for the given function's current IC states.\n"
+"  The function must already be baseline compiled.\n"),
+    JS_FN_HELP("hasMegamorphicIC", HasMegamorphicIC, 1, 0,
+"hasMegamorphicIC(fun)",
+"  Returns true if any fallback stub in the function's JIT script is at\n"
+"  Megamorphic or Generic IC mode.\n"),
+    JS_FN_HELP("resetFallbackStubStates", ResetFallbackStubStates, 1, 0,
+"resetFallbackStubStates(fun)",
+"  Resets all fallback stub IC states to Specialized mode.\n"),
 
     JS_FN_HELP("encodeAsUtf8InBuffer", EncodeAsUtf8InBuffer, 2, 0,
 "encodeAsUtf8InBuffer(str, uint8Array)",
