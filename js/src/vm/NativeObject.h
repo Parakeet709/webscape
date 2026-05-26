@@ -682,19 +682,19 @@ class NativeObject : public JSObject {
   static void staticAsserts() {
     static_assert(sizeof(NativeObject) == sizeof(JSObject_Slots0),
                   "native object size must match GC thing size");
-    static_assert(sizeof(NativeObject) == sizeof(JS::shadow::Object),
+    static_assert(sizeof(NativeObject) == sizeof(JS::shadow::NativeObject),
                   "shadow interface must match actual implementation");
     static_assert(sizeof(NativeObject) % sizeof(Value) == 0,
                   "fixed slots after an object must be aligned");
 
     static_assert(offsetOfShape() == offsetof(JS::shadow::Object, shape),
                   "shadow type must match actual type");
-    static_assert(
-        offsetof(NativeObject, slots_) == offsetof(JS::shadow::Object, slots),
-        "shadow slots must match actual slots");
-    static_assert(
-        offsetof(NativeObject, elements_) == offsetof(JS::shadow::Object, _1),
-        "shadow placeholder must match actual elements");
+    static_assert(offsetof(NativeObject, slots_) ==
+                      offsetof(JS::shadow::NativeObject, slots),
+                  "shadow slots must match actual slots");
+    static_assert(offsetof(NativeObject, elements_) ==
+                      offsetof(JS::shadow::NativeObject, _1),
+                  "shadow placeholder must match actual elements");
 
     static_assert(MAX_FIXED_SLOTS <= Shape::FIXED_SLOTS_MAX,
                   "verify numFixedSlots() bitfield is big enough");
@@ -1160,20 +1160,6 @@ class NativeObject : public JSObject {
   static bool freezeOrSealProperties(JSContext* cx, Handle<NativeObject*> obj,
                                      IntegrityLevel level);
 
- protected:
-  static bool changeNumFixedSlotsAfterSwap(JSContext* cx,
-                                           Handle<NativeObject*> obj,
-                                           uint32_t nfixed);
-
-  // For use from JSObject::swap.
-  [[nodiscard]] bool prepareForSwap(JSContext* cx, JSObject* other,
-                                    MutableHandleValueVector slotValuesOut);
-  [[nodiscard]] static bool fixupAfterSwap(JSContext* cx,
-                                           Handle<NativeObject*> obj,
-                                           gc::AllocKind kind,
-                                           HandleValueVector slotValues);
-
- public:
   // Return true if this object has been converted from shared-immutable
   // shapes to object-owned dictionary shapes.
   bool inDictionaryMode() const { return shape()->isDictionary(); }
@@ -1313,12 +1299,11 @@ class NativeObject : public JSObject {
   inline uint64_t maybeUniqueId() const {
     return getSlotsHeader()->maybeUniqueId();
   }
-  bool setOrUpdateUniqueId(JSContext* cx, uint64_t uid);
 
   // MAX_FIXED_SLOTS is the biggest number of fixed slots our GC
   // size classes will give an object.
   static constexpr uint32_t MAX_FIXED_SLOTS =
-      JS::shadow::Object::MAX_FIXED_SLOTS;
+      JS::shadow::NativeObject::MAX_FIXED_SLOTS;
 
  private:
   void prepareElementRangeForOverwrite(size_t start, size_t end) {
@@ -1344,22 +1329,15 @@ class NativeObject : public JSObject {
   // that the first reserved slots (up to MAX_FIXED_SLOTS) are always stored in
   // fixed slots. This lets the compiler optimize away the branch below when
   // |index| is a constant (after inlining).
-  //
-  // Note: objects that may be swapped have less predictable slot layouts
-  // because they could have been swapped with an object with fewer fixed slots.
-  // Fortunately, the only native objects that can be swapped are DOM objects
-  // and these shouldn't end up here (asserted below).
   MOZ_ALWAYS_INLINE HeapSlot& getReservedSlotRef(uint32_t index) {
     MOZ_ASSERT(index < JSSLOT_FREE(getClass()));
     MOZ_ASSERT(slotIsFixed(index) == (index < MAX_FIXED_SLOTS));
-    MOZ_ASSERT(!ObjectMayBeSwapped(this));
     return index < MAX_FIXED_SLOTS ? fixedSlots()[index]
                                    : slots_[index - MAX_FIXED_SLOTS];
   }
   MOZ_ALWAYS_INLINE const HeapSlot& getReservedSlotRef(uint32_t index) const {
     MOZ_ASSERT(index < JSSLOT_FREE(getClass()));
     MOZ_ASSERT(slotIsFixed(index) == (index < MAX_FIXED_SLOTS));
-    MOZ_ASSERT(!ObjectMayBeSwapped(this));
     return index < MAX_FIXED_SLOTS ? fixedSlots()[index]
                                    : slots_[index - MAX_FIXED_SLOTS];
   }

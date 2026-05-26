@@ -13,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.R
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
 import org.mozilla.fenix.helpers.AppAndSystemHelper.assertNativeAppOpens
@@ -27,6 +28,7 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.articleSummaryAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.firstForeignWebPageAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.pdfFormAsset
@@ -63,6 +65,8 @@ class MainMenuTest {
                 skipOnboarding = true,
                 isMenuRedesignCFREnabled = false,
                 isPageLoadTranslationsPromptEnabled = false,
+                shakeToSummarizeFeatureFlagEnabled = true,
+                hasSeenShakeToSummarizeToolbarCfr = false,
             ),
         ) { it.activity }
 
@@ -77,9 +81,14 @@ class MainMenuTest {
     val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080168
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyMainMenuItemsTest"],
+        bug = 2040343,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
-    fun verifyTheHomepageRedesignedMenuItemsTest() {
+    fun verifyMainMenuItemsTest() {
         homeScreen(composeTestRule) {
         }.openThreeDotMenu {
             verifyHomeMainMenuItems()
@@ -87,9 +96,14 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080124
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheBrowserViewMainMenuItemsTest"],
+        bug = 2040343,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
-    fun verifyTheWebpageRedesignedMenuItemsTest() {
+    fun verifyTheBrowserViewMainMenuItemsTest() {
         val testPage = mockWebServer.getGenericAsset(1)
 
         navigationToolbar(composeTestRule) {
@@ -115,6 +129,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080130
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.FindInPageTest#verifyTheFindInPageMenuItemTest"],
+        bug = 2030658,
+        since = "2026-04",
+    )
     @SmokeTest
     @Test
     fun verifyTheFindInPageMenuItemTest() {
@@ -150,6 +169,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080136
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheHistoryMenuItemTest"],
+        bug = 2041634,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheHistoryMenuItemTest() {
@@ -159,13 +183,18 @@ class MainMenuTest {
         }.enterURLAndEnterToBrowser(testPage.url) {
         }.openThreeDotMenu {
         }.clickHistoryButton {
-            verifyHistoryMenuView()
+            verifyHistoryMenuView(historyItemExists = true)
         }.goBack {
             verifyPageContent(testPage.content)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080138
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheDownloadsMenuItemTest"],
+        bug = 2041282,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheDownloadsMenuItemTest() {
@@ -293,6 +322,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080129
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheBookmarkPageMenuOptionTest"],
+        bug = 2041282,
+        since = "2026-05",
+    )
     @SmokeTest
     @Test
     fun verifyTheBookmarkPageMenuOptionTest() {
@@ -586,7 +620,7 @@ class MainMenuTest {
         navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage.url) {
             clickPageObject(composeTestRule, MatcherHelper.itemWithText("PDF form file"))
-            clickPageObject(composeTestRule, itemContainingText("Cancel"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
         }.openThreeDotMenu {
         }.clickFindInPageButton {
             verifyFindInPageNextButton()
@@ -972,6 +1006,11 @@ class MainMenuTest {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3080172
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.MainMenuTest#verifyTheExtensionsMenuOptionTest"],
+        bug = 2024907,
+        since = "2026-03",
+    )
     @SmokeTest
     @Test
     fun verifyTheExtensionsMenuOptionTest() {
@@ -1342,6 +1381,39 @@ class MainMenuTest {
         }.openThreeDotMenu {
             clickTheMoreButton()
             verifyMoreMainMenuItems()
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4036009
+    @SmokeTest
+    @Test
+    fun verifyTheMoreMainMenuSummarizePageButtonTest() {
+        val articlePage = mockWebServer.articleSummaryAsset
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(articlePage.url) {
+            waitForPageToLoad()
+            clickTheDismissButtonOnSummarizeCFR()
+        }.openThreeDotMenu {
+            clickTheMoreButton()
+            verifySummarizePageButton()
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4036011
+    @SmokeTest
+    @Test
+    fun verifyTheMoreMainMenuSummarizePageButtonFunctionalityTest() {
+        val articlePage = mockWebServer.articleSummaryAsset
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(articlePage.url) {
+            waitForPageToLoad()
+            clickTheDismissButtonOnSummarizeCFR()
+        }.openThreeDotMenu {
+            clickTheMoreButton()
+            verifySummarizePageButton()
+        }.clickSummarizePageButton {
+            composeTestRule.waitForIdle()
+            verifyTheSummarizedBottomSheet()
         }
     }
 }

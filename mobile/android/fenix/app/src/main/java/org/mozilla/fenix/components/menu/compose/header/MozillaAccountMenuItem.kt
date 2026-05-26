@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +44,7 @@ import mozilla.components.service.fxa.manager.AccountState.Authenticated
 import mozilla.components.service.fxa.manager.AccountState.Authenticating
 import mozilla.components.service.fxa.manager.AccountState.AuthenticationProblem
 import mozilla.components.service.fxa.manager.AccountState.NotAuthenticated
+import mozilla.components.service.fxa.manager.AccountState.Unknown
 import mozilla.components.service.fxa.store.Account
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.Image
@@ -54,7 +54,6 @@ import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
 private val BUTTON_HEIGHT = 56.dp
-private val BUTTON_SHAPE = RoundedCornerShape(size = 4.dp)
 private val AVATAR_SIZE = 24.dp
 
 @SuppressWarnings("LongMethod")
@@ -71,7 +70,7 @@ internal fun MozillaAccountMenuItem(
     val contentDescription: String
 
     when (accountState) {
-        NotAuthenticated -> {
+        NotAuthenticated, Unknown -> {
             label = stringResource(id = R.string.browser_menu_sign_in)
             description = stringResource(id = R.string.browser_menu_sign_in_caption_3)
         }
@@ -103,7 +102,7 @@ internal fun MozillaAccountMenuItem(
                 this.contentDescription = contentDescription
             }
             .wrapContentSize()
-            .clip(shape = BUTTON_SHAPE)
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(color = MaterialTheme.colorScheme.surfaceDimVariant)
             .height(IntrinsicSize.Min)
             .defaultMinSize(minHeight = BUTTON_HEIGHT)

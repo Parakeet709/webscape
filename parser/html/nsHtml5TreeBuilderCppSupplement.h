@@ -40,7 +40,6 @@ nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsHtml5OplessBuilder* aBuilder)
       quirks(false),
       forceNoQuirks(false),
       allowDeclarativeShadowRoots(false),
-      noInSelectMode(false),
       keepBuffer(false),
       mBuilder(aBuilder),
       mViewSource(nullptr),
@@ -85,7 +84,6 @@ nsHtml5TreeBuilder::nsHtml5TreeBuilder(nsAHtml5TreeOpSink* aOpSink,
       quirks(false),
       forceNoQuirks(false),
       allowDeclarativeShadowRoots(false),
-      noInSelectMode(false),
       keepBuffer(false),
       mBuilder(nullptr),
       mViewSource(nullptr),
@@ -837,6 +835,11 @@ nsIContentHandle* nsHtml5TreeBuilder::createAndInsertFosterParentedElement(
   insertFosterParentedChild(child, aTable, aStackParent);
 
   return child;
+}
+
+void nsHtml5TreeBuilder::optionElementPopped(nsIContentHandle* aOption) {
+  // TODO: Implement "maybe clone an option into selectedcontent" for
+  // customizable <select>.
 }
 
 void nsHtml5TreeBuilder::detachFromParent(nsIContentHandle* aElement) {

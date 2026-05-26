@@ -32,6 +32,7 @@
   --weekend-font-color: -moz-activehyperlinktext;
 
   --disabled-background-color: ButtonShadow;
+  --disabled-opacity: 0.5;
 
   /* TODO: these need to be in sync (ish) with DateTimePickerPanel.sys.mjs */
   font-size: 10px;
@@ -365,10 +366,14 @@ button.month-year.active {
   border-radius: var(--border-radius);
   user-select: none;
   scroll-snap-align: start;
-}
 
-.spinner-container > .spinner > div.disabled {
-  visibility: hidden;
+  &.disabled {
+    opacity: var(--disabled-opacity);
+  }
+
+  &.hidden {
+    visibility: hidden;
+  }
 }
 
 /* Used only in <input type="time"> */

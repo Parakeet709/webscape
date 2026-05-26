@@ -4,10 +4,7 @@
 
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
-import {
-  BANDWIDTH,
-  LINKS,
-} from "chrome://browser/content/ipprotection/ipprotection-constants.mjs";
+import { LINKS } from "chrome://browser/content/ipprotection/ipprotection-constants.mjs";
 
 /**
  * A custom element that handles the signed out status of IP Protection.
@@ -73,29 +70,24 @@ export default class IPProtectionUnauthenticatedContentElement extends MozLitEle
         <ul id="unauthenticated-vpn-message" class="vpn-description">
           <li
             id="unauthenticated-private-location"
-            data-l10n-id="unauthenticated-private-location-message"
             @click=${this.handleLearnMoreClick}
             class="with-icon"
           >
-            <a
-              class="learn-more-vpn"
-              data-l10n-name="learn-more-vpn"
-              href=${Services.urlFormatter.formatURLPref(
-                "app.support.baseURL"
-              ) + LINKS.SUPPORT_SLUG}
-            ></a>
+            <span data-l10n-id="unauthenticated-private-location-message">
+              <a
+                class="learn-more-vpn"
+                data-l10n-name="learn-more-vpn"
+                href=${Services.urlFormatter.formatURLPref(
+                  "app.support.baseURL"
+                ) + LINKS.SUPPORT_SLUG}
+              ></a>
+            </span>
           </li>
-          <li
-            id="unauthenticated-choose-location"
-            data-l10n-id="unauthenticated-choose-location-message"
-            class="with-icon"
-          ></li>
-          <li
-            id="unauthenticated-bandwidth-limit"
-            data-l10n-id="unauthenticated-bandwidth-limit-message"
-            data-l10n-args=${JSON.stringify({ maxUsage: BANDWIDTH.MAX_IN_GB })}
-            class="with-icon"
-          ></li>
+          <li id="unauthenticated-choose-location" class="with-icon">
+            <span
+              data-l10n-id="unauthenticated-choose-location-message-1"
+            ></span>
+          </li>
         </ul>
         <moz-button
           id="unauthenticated-get-started"

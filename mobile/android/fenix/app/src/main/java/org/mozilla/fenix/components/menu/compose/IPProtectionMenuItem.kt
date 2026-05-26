@@ -15,11 +15,12 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,7 +42,6 @@ import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
 private val MENU_ITEM_MIN_HEIGHT = 52.dp
-private val ROUNDED_CORNER = RoundedCornerShape(4.dp)
 
 /**
  * A menu item showing the current IP Protection status.
@@ -62,7 +62,7 @@ internal fun IPProtectionMenuItem(
     Row(
         modifier = Modifier
             .wrapContentSize()
-            .clip(ROUNDED_CORNER)
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(MaterialTheme.colorScheme.surfaceDimVariant)
             .height(IntrinsicSize.Min)
             .defaultMinSize(minHeight = MENU_ITEM_MIN_HEIGHT),
@@ -92,7 +92,7 @@ internal fun IPProtectionMenuItem(
                     maxLines = 1,
                 )
 
-                if (state.status == IPProtectionMenuStatus.Paused) {
+                if (state.status == IPProtectionMenuStatus.DataLimitReached) {
                     Text(
                         text = stringResource(R.string.ip_protection_menu_limit_reached, state.dataLimitGb),
                         color = MaterialTheme.colorScheme.error,
@@ -108,6 +108,14 @@ internal fun IPProtectionMenuItem(
                 state = badgeState(state.status),
             )
         }
+
+        VerticalDivider(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(vertical = FirefoxTheme.layout.space.static100)
+                .width(1.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
 
         Box(
             modifier = Modifier
@@ -127,22 +135,21 @@ internal fun IPProtectionMenuItem(
 
 @Composable
 private fun badgeText(status: IPProtectionMenuStatus): String = when (status) {
-    IPProtectionMenuStatus.On -> stringResource(R.string.preferences_ip_protection_on)
+    IPProtectionMenuStatus.Disabled -> stringResource(R.string.preferences_ip_protection_off)
+    IPProtectionMenuStatus.Enabled -> stringResource(R.string.preferences_ip_protection_on)
     IPProtectionMenuStatus.Activating -> stringResource(R.string.ip_protection_menu_connecting)
-    IPProtectionMenuStatus.Paused -> stringResource(R.string.ip_protection_menu_paused)
-    IPProtectionMenuStatus.Error -> stringResource(R.string.ip_protection_menu_error)
-    IPProtectionMenuStatus.Off,
-    IPProtectionMenuStatus.NeedsAuthentication,
-    -> stringResource(R.string.preferences_ip_protection_off)
+    IPProtectionMenuStatus.DataLimitReached -> stringResource(R.string.ip_protection_menu_paused)
+    IPProtectionMenuStatus.ConnectionError -> stringResource(R.string.ip_protection_menu_error)
+    IPProtectionMenuStatus.AuthRequired -> stringResource(R.string.ip_protection_menu_auth_required)
 }
 
 private fun badgeState(status: IPProtectionMenuStatus): MenuItemState = when (status) {
-    IPProtectionMenuStatus.On -> MenuItemState.ACTIVE
-    IPProtectionMenuStatus.Error -> MenuItemState.WARNING
-    IPProtectionMenuStatus.Paused -> MenuItemState.DISABLED
-    IPProtectionMenuStatus.Off,
+    IPProtectionMenuStatus.Enabled -> MenuItemState.ACTIVE
+    IPProtectionMenuStatus.ConnectionError -> MenuItemState.WARNING
+    IPProtectionMenuStatus.DataLimitReached -> MenuItemState.DISABLED
+    IPProtectionMenuStatus.Disabled,
     IPProtectionMenuStatus.Activating,
-    IPProtectionMenuStatus.NeedsAuthentication,
+    IPProtectionMenuStatus.AuthRequired,
     -> MenuItemState.ENABLED
 }
 
@@ -154,7 +161,7 @@ private fun IPProtectionMenuItemOffPreview(
     FirefoxTheme(theme = theme) {
         MenuGroup {
             IPProtectionMenuItem(
-                state = IPProtectionMenuState(status = IPProtectionMenuStatus.Off),
+                state = IPProtectionMenuState(status = IPProtectionMenuStatus.Disabled),
                 onToggle = {},
                 onNavigate = {},
             )
@@ -170,7 +177,7 @@ private fun IPProtectionMenuItemOnPreview(
     FirefoxTheme(theme = theme) {
         MenuGroup {
             IPProtectionMenuItem(
-                state = IPProtectionMenuState(status = IPProtectionMenuStatus.On),
+                state = IPProtectionMenuState(status = IPProtectionMenuStatus.Enabled),
                 onToggle = {},
                 onNavigate = {},
             )
@@ -203,7 +210,7 @@ private fun IPProtectionMenuItemPausedPreview(
         MenuGroup {
             IPProtectionMenuItem(
                 state = IPProtectionMenuState(
-                    status = IPProtectionMenuStatus.Paused,
+                    status = IPProtectionMenuStatus.DataLimitReached,
                     dataLimitGb = 50,
                 ),
                 onToggle = {},

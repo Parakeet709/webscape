@@ -500,6 +500,11 @@ var validNonUrlImageValues = [
   "-webkit-repeating-radial-gradient(circle, red, blue 10%, red 20%)",
   "-webkit-repeating-radial-gradient(circle farthest-corner, gray 10px, yellow 20px)",
   "-webkit-repeating-radial-gradient(top left, circle, red, blue 4%, red 8%)",
+
+  // image() function
+  "image(red)",
+  "image(transparent)",
+  "image(color-mix(in srgb, red, blue))",
 ];
 var invalidNonUrlImageValues = [
   "-moz-element(#a:1)",
@@ -827,6 +832,8 @@ var invalidNonUrlImageValues = [
         "cross-fade(#F0F8FF, rgb(0, 0, 0), rgba(0, 255, 0, 1), 25%)",
       ]
     : []),
+
+  "image(none)",
 ];
 var unbalancedGradientAndElementValues = ["-moz-element(#a()"];
 
@@ -866,6 +873,7 @@ var basicShapeOtherValues = [
   "circle(calc(20px + 30px))",
   "circle(farthest-side)",
   "circle(closest-side)",
+  "circle(closest-corner)",
   "circle(closest-side at center)",
   "circle(farthest-side at top)",
   "circle(20px at top right)",
@@ -884,6 +892,7 @@ var basicShapeOtherValues = [
   "ellipse(closest-side farthest-side)",
   "ellipse(farthest-side farthest-side)",
   "ellipse(closest-side closest-side)",
+  "ellipse(closest-corner farthest-corner)",
   "ellipse(closest-side closest-side at center)",
   "ellipse(20% farthest-side at top)",
   "ellipse(20px 50% at top right)",
@@ -947,7 +956,6 @@ var basicShapeInvalidValues = [
   "circle(at 20% 20% 30%)",
   "circle(20px 2px at center)",
   "circle(2at center)",
-  "circle(closest-corner)",
   "circle(at center top closest-side)",
   "circle(-20px)",
   "circle(farthest-side closest-side)",
@@ -960,7 +968,6 @@ var basicShapeInvalidValues = [
   "ellipse(at 20% 20% 30%)",
   "ellipse(20px at center)",
   "ellipse(-20px 20px)",
-  "ellipse(closest-corner farthest-corner)",
   "ellipse(20px -20px)",
   "ellipse(-20px -20px)",
   "ellipse(farthest-side)",

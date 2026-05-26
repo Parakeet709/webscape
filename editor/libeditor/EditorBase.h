@@ -72,6 +72,7 @@ class PresShell;
 class TextComposition;
 class TextInputListener;
 class TextServicesDocument;
+struct LimitersAndCaretData;
 namespace dom {
 class AbstractRange;
 class DataTransfer;
@@ -192,7 +193,7 @@ class EditorBase : public nsIEditor,
 
   PresShell* GetPresShell() const;
   nsPresContext* GetPresContext() const;
-  already_AddRefed<nsCaret> GetCaret() const;
+  already_AddRefed<nsCaret> GetCaretForSelection() const;
 
   already_AddRefed<nsIWidget> GetWidget() const;
 
@@ -1128,6 +1129,8 @@ class EditorBase : public nsIEditor,
       return *mSelection;
     }
 
+    LimitersAndCaretData SelectionLimitersAndCaretData() const;
+
     Text* GetCachedTextNode() const {
       MOZ_ASSERT(mEditorBase.IsTextEditor());
       return mTextNode;
@@ -1597,6 +1600,7 @@ class EditorBase : public nsIEditor,
                SelectionType::eNormal);
     return mEditActionData->SelectionRef();
   }
+  LimitersAndCaretData SelectionLimitersAndCaretData() const;
 
   // Return the Text if and only if we're a TextEditor instance.  It's cached
   // while we're handling an edit action, so, this stores the latest value even
@@ -2640,6 +2644,8 @@ class EditorBase : public nsIEditor,
   };
   MOZ_CAN_RUN_SCRIPT void NotifyEditorObservers(
       NotificationForEditorObservers aNotification);
+
+  virtual dom::EditContext* GetEditContext() const { return nullptr; }
 
   /**
    * HowToHandleCollapsedRange indicates how collapsed range should be treated.

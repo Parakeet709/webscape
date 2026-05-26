@@ -40,15 +40,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import mozilla.components.compose.base.InfoCard
+import mozilla.components.compose.base.InfoType
 import mozilla.components.compose.base.LinkText
 import mozilla.components.compose.base.LinkTextState
+import mozilla.components.compose.base.PromoCard
 import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.concept.ai.controls.AIControllableFeature
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.InfoCard
-import org.mozilla.fenix.compose.InfoType
-import org.mozilla.fenix.compose.PromoCard
 import org.mozilla.fenix.compose.list.IconListItem
 import org.mozilla.fenix.compose.list.SwitchListItem
 import org.mozilla.fenix.compose.settings.SettingsSectionHeader
@@ -59,7 +59,6 @@ import org.mozilla.fenix.settings.settingssearch.SettingsSearchProvider
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
-import mozilla.components.ui.icons.R as iconsR
 
 private const val HEADER_ITEM_COUNT = 2
 
@@ -208,6 +207,7 @@ private fun AIFeaturesHeader() {
                 horizontal = FirefoxTheme.layout.space.dynamic200,
                 vertical = 8.dp,
             ),
+            color = MaterialTheme.colorScheme.tertiary,
         )
     }
 }
@@ -261,7 +261,7 @@ private fun AIChoiceBanner(onLearnMoreClick: () -> Unit) {
         ),
         illustration = {
             Image(
-                painter = painterResource(iconsR.drawable.mozac_ic_fox_ai_on_state),
+                painter = painterResource(R.drawable.fox_ai_on_state),
                 contentDescription = null,
                 modifier = Modifier
                     .width(62.dp)
@@ -445,7 +445,7 @@ object AIControlsSearchProvider : SettingsSearchProvider {
                 ),
             )
 
-            for (feature in context.components.aiFeatureRegistry.getFeatures()) {
+            for (feature in context.components.aiFeatureRegistry.getFeatures().sortedForDisplay()) {
                 add(
                     SettingsSearchItem(
                         title = context.getString(feature.description.titleRes),

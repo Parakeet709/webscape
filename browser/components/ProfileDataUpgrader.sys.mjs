@@ -38,6 +38,36 @@ export let ProfileDataUpgrader = {
       });
   },
 
+  _migrateBackupProfilesPref() {
+    const oldPref = "browser.backup.enabled_on.profiles";
+    try {
+      let rawValue = Services.prefs.getStringPref(oldPref, "");
+      if (!rawValue) {
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(rawValue);
+      } catch {
+        console.error(
+          `Failed to parse ${oldPref} during migration. Value: ${rawValue}`
+        );
+        return;
+      }
+
+      if (Array.isArray(parsed)) {
+        return;
+      }
+
+      // Convert keys to array
+      let profilesArray = Object.keys(parsed);
+      Services.prefs.setStringPref(oldPref, JSON.stringify(profilesArray));
+    } catch (e) {
+      console.error(`Error during migration of ${oldPref}:`, e);
+    }
+  },
+
   /**
    * This method transforms data in the profile directory so that it can be
    * used in the current version of Firefox. It is organized similar to
@@ -989,6 +1019,19 @@ export let ProfileDataUpgrader = {
     if (existingDataVersion < 171) {
       // Force all logins to be re-migrated to the rust store.
       Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
+    }
+
+    if (existingDataVersion < 172) {
+      if (Services.prefs.getBoolPref("browser.smartwindow.enabled", false)) {
+        Services.prefs.setBoolPref(
+          "places.semanticHistory.smartwindow.featureGate",
+          true
+        );
+      }
+    }
+
+    if (existingDataVersion < 173) {
+      this._migrateBackupProfilesPref();
     }
 
     // Update the migration version.

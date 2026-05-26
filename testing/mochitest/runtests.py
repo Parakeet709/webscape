@@ -223,7 +223,10 @@ class MessageLogger:
 
     def _fix_test_name(self, message):
         """Normalize a logged test path to match the relative path from the sourcedir."""
-        if message.get("test") is not None:
+        if message.get("test") is None:
+            if self._current_test_name is not None:
+                message["test"] = self._current_test_name
+        else:
             test = message["test"]
             for pattern in MessageLogger.TEST_PATH_PREFIXES:
                 test = re.sub(pattern, "", test)
@@ -594,6 +597,15 @@ class MochitestServer:
                 os.path.join(os.path.dirname(here), "bin"),
                 env["LD_LIBRARY_PATH"],
             ])
+            # The trainhop bundle ships an m-c libxul.so in tests/bin that gets
+            # loaded by this xpcshell. That libxul would rendez-vous with the
+            # crashhelper from the Beta/Release application directory, but the
+            # two speak incompatible IPC protocols (see bug 2037462), causing
+            # the synchronous startup rendez-vous to hang. The httpd xpcshell
+            # is not the SUT, so suppress its crash-reporter setup -- xpcshell
+            # only enters the OOPInit/SetExceptionHandler block when
+            # MOZ_CRASHREPORTER is set (XPCShellImpl.cpp), so we just unset it.
+            env.pop("MOZ_CRASHREPORTER", None)
 
         # When running with an ASan build, our xpcshell server will also be ASan-enabled,
         # thus consuming too much resources when running together with the browser on
@@ -1683,12 +1695,6 @@ class MochitestDesktop:
             chrometestDir = self.getChromeTestDir(options)
             manifestFile.write(
                 f"content mochitests {chrometestDir} contentaccessible=yes\n"
-            )
-            manifestFile.write(
-                f"content mochitests-any {chrometestDir} contentaccessible=yes remoteenabled=yes\n"
-            )
-            manifestFile.write(
-                f"content mochitests-content {chrometestDir} contentaccessible=yes remoterequired=yes\n"
             )
 
             if options.testingModulesDir is not None:
@@ -2899,12 +2905,12 @@ toolbar#nav-bar {
 
             # Log if slow events are used from chrome.
             env["MOZ_LOG"] = (
-                env["MOZ_LOG"] + "," if env["MOZ_LOG"] else ""
+                env["MOZ_LOG"] + "," if env.get("MOZ_LOG") else ""
             ) + "SlowChromeEvent:3"
 
             if detectShutdownLeaks:
                 env["MOZ_LOG"] = (
-                    env["MOZ_LOG"] + "," if env["MOZ_LOG"] else ""
+                    env["MOZ_LOG"] + "," if env.get("MOZ_LOG") else ""
                 ) + "DocShellAndDOMWindowLeak:3"
                 shutdownLeaks = ShutdownLeaks(self.log)
             else:
@@ -3052,10 +3058,18 @@ toolbar#nav-bar {
             runner.process_handler = None
 
             if not status and self.message_logger.is_test_running:
+                # In retry mode, queue the test for retry and suppress the
+                # unexpected failure on the initial run; otherwise report it
+                # as a real failure.
+                if self.message_logger.retry_mode:
+                    self.failedTests.add(self.lastTestSeen)
+                    expected = "FAIL"
+                else:
+                    expected = "PASS"
                 message = {
                     "action": "test_end",
                     "status": "FAIL",
-                    "expected": "PASS",
+                    "expected": expected,
                     "thread": None,
                     "pid": None,
                     "source": "mochitest",
@@ -4355,7 +4369,10 @@ toolbar#nav-bar {
                 self.harness.countfail += unattributedFailures
                 for error in leakErrors:
                     if error["test"] not in self.harness.failedTests:
-                        self.harness.countfail += 1
+                        if self.harness.message_logger.retry_mode:
+                            self.harness.failedTests.add(error["test"])
+                        else:
+                            self.harness.countfail += 1
                     msg = {
                         "action": "test_status",
                         "subtest": "Shutdown",

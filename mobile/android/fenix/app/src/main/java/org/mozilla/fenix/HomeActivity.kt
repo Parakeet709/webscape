@@ -39,6 +39,7 @@ import androidx.core.text.layoutDirection
 import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
+import androidx.navigation.NavDirections
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.NavigationUI
@@ -56,12 +57,16 @@ import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.selector.getNormalOrPrivateTabs
 import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.browser.state.state.ActiveOptionsPage
 import mozilla.components.browser.state.state.WebExtensionState
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.storage.HistoryMetadataKey
 import mozilla.components.feature.contextmenu.DefaultSelectionActionDelegate
 import mozilla.components.feature.customtabs.isCustomTabIntent
+import mozilla.components.feature.ipprotection.IPProtectionFxaAuthFlow
+import mozilla.components.feature.ipprotection.IPProtectionFxaAuthFlow.Companion.EntrypointConfig
+import mozilla.components.feature.ipprotection.IPProtectionFxaAuthFlow.Companion.INTENT_ON_COMPLETE
 import mozilla.components.feature.media.ext.findActiveMediaTab
 import mozilla.components.feature.privatemode.notification.PrivateNotificationFeature
 import mozilla.components.feature.search.BrowserStoreSearchAdapter
@@ -81,12 +86,14 @@ import mozilla.components.support.utils.BrowsersCache
 import mozilla.components.support.utils.BuildManufacturerChecker
 import mozilla.components.support.utils.SafeIntent
 import mozilla.components.support.utils.toSafeIntent
+import mozilla.components.support.webextensions.WebExtensionOptionsPageObserver
 import mozilla.components.support.webextensions.WebExtensionPopupObserver
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.experiments.nimbus.initializeTooling
 import org.mozilla.fenix.GleanMetrics.AppIcon
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.Metrics
+import org.mozilla.fenix.GleanMetrics.NativeShareSheet
 import org.mozilla.fenix.GleanMetrics.SplashScreen
 import org.mozilla.fenix.GleanMetrics.StartOnHome
 import org.mozilla.fenix.addons.ExtensionsProcessDisabledBackgroundController
@@ -98,16 +105,17 @@ import org.mozilla.fenix.browser.BrowserFragment
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.browser.browsingmode.DefaultBrowsingModeManager
+import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.ShareAction
 import org.mozilla.fenix.components.appstate.OrientationMode
+import org.mozilla.fenix.components.ipprotection.ErrorMessages
+import org.mozilla.fenix.components.ipprotection.IPProtectionInfoPrompter
 import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.menu.share.QRCodeDialogFragment
 import org.mozilla.fenix.components.metrics.BreadcrumbsRecorder
 import org.mozilla.fenix.components.metrics.GrowthDataWorker
 import org.mozilla.fenix.components.metrics.InstallReferrerHandlingService
-import org.mozilla.fenix.components.metrics.MarketingAttributionHandler
-import org.mozilla.fenix.components.metrics.RtamoAttributionHandler
 import org.mozilla.fenix.components.metrics.fonts.FontEnumerationWorker
 import org.mozilla.fenix.components.share.QR_CODE_URI_KEY
 import org.mozilla.fenix.components.share.SEND_TO_DEVICES_ACTION
@@ -166,11 +174,9 @@ import org.mozilla.fenix.session.PrivateNotificationService
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.shortcut.NewTabShortcutIntentProcessor.Companion.ACTION_OPEN_PRIVATE_TAB
 import org.mozilla.fenix.splashscreen.ApplyExperimentsOperation
-import org.mozilla.fenix.splashscreen.CompositeSplashScreenOperation
 import org.mozilla.fenix.splashscreen.DefaultExperimentsOperationStorage
 import org.mozilla.fenix.splashscreen.DefaultSplashScreenStorage
 import org.mozilla.fenix.splashscreen.FetchExperimentsOperation
-import org.mozilla.fenix.splashscreen.RtamoSplashScreenOperation
 import org.mozilla.fenix.splashscreen.SplashScreenManager
 import org.mozilla.fenix.splashscreen.SplashScreenOperation
 import org.mozilla.fenix.tabhistory.TabHistoryDialogFragment
@@ -211,6 +217,10 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
         WebExtensionPopupObserver(components.core.store, ::openPopup)
     }
 
+    private val webExtensionOptionsPageObserver by lazy {
+        WebExtensionOptionsPageObserver(components.core.store, ::openOptionsPage)
+    }
+
     private val webExtensionPromptFeature by lazy {
         WebExtensionPromptFeature(
             store = components.core.store,
@@ -234,6 +244,20 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
                     )
                 }
             },
+        )
+    }
+
+    private val ipProtectionPrompter by lazy {
+        IPProtectionInfoPrompter(
+            store = components.ipProtection.store,
+            appStore = components.appStore,
+            errorMessages = ErrorMessages(
+                connectionError = this.getString(R.string.ip_protection_connection_error_snackbar),
+                dataLimitReached = this.getString(
+                    R.string.ip_protection_data_limit_reached_snackbar,
+                    FxNimbus.features.ipProtection.value().dataLimitGigabyte,
+                ),
+            ),
         )
     }
 
@@ -320,6 +344,22 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
                 preferences = settings().preferences,
                 privateBrowsingLockPrefKey = getString(R.string.pref_key_private_browsing_locked),
             ),
+        )
+    }
+
+    private val ipProtectionFxaAccountAuthFlow by lazy {
+        IPProtectionFxaAuthFlow(
+            accountManager = components.backgroundServices.accountManager,
+            store = components.ipProtection.store,
+            entrypointConfig = EntrypointConfig(
+                authorization = FenixFxAEntryPoint.IPProtectionMainMenu,
+                authentication = FenixFxAEntryPoint.IPProtectionOnboarding,
+            ),
+            onAuthRequested = { url, onCompleteAction ->
+                val intent = SupportUtils.createAuthCustomTabIntent(this, url)
+                intent.putExtra(INTENT_ON_COMPLETE, onCompleteAction)
+                startActivity(intent)
+            },
         )
     }
 
@@ -553,6 +593,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
 
         lifecycle.addObservers(
             webExtensionPopupObserver,
+            webExtensionOptionsPageObserver,
             extensionsProcessDisabledForegroundController,
             extensionsProcessDisabledBackgroundController,
             serviceWorkerSupport,
@@ -575,10 +616,13 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             summarizeToolbarHighlightBinding,
             components.core.summarizationSettings,
             translationsAIControllableFeatureRegistrar,
+            ipProtectionPrompter,
         )
 
         if (!isCustomTabIntent(intent)) {
             lifecycle.addObserver(webExtensionPromptFeature)
+            // FIXME(IPP) move this to each UI fragment with separate entry points.
+            lifecycle.addObserver(ipProtectionFxaAccountAuthFlow)
         }
 
         if (shouldAddToRecentsScreen(intent)) {
@@ -939,18 +983,24 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             val title = intent.getStringExtra(SendToDevicesDialogFragment.EXTRA_TITLE)
             val isPrivate = intent.getStringExtra(SendToDevicesDialogFragment.EXTRA_PRIVACY) ==
                 SendToDevicesDialogFragment.PRIVACY_PRIVATE
+
             if (supportFragmentManager.findFragmentByTag(SendToDevicesDialogFragment.TAG) == null) {
                 SendToDevicesDialogFragment.newInstance(url, title, isPrivate).showNow(
                     supportFragmentManager,
                     SendToDevicesDialogFragment.TAG,
                 )
             }
+
             return
         }
 
         val qrCodeUri = intent.getStringExtra(QR_CODE_URI_KEY)
         if (qrCodeUri != null) {
             if (supportFragmentManager.findFragmentByTag(QRCodeDialogFragment.TAG) == null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    NativeShareSheet.qrCodeTapped.record(NoExtras())
+                }
+
                 QRCodeDialogFragment.newInstance(qrCodeUri).showNow(
                     supportFragmentManager,
                     QRCodeDialogFragment.TAG,
@@ -1237,22 +1287,11 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             )
         }
 
-        if (!shouldShowOnboarding) return nimbusOperation
+        if (shouldShowOnboarding) {
+            InstallReferrerHandlingService(applicationContext).start()
+        }
 
-        val rtamoHandler = RtamoAttributionHandler(settings(), components.addonsProvider)
-        val installReferrerHandlingService = InstallReferrerHandlingService(
-            context = applicationContext,
-            handlers = listOf(
-                rtamoHandler,
-                MarketingAttributionHandler(settings(), components.distributionIdManager),
-            ),
-        )
-        return CompositeSplashScreenOperation(
-            listOf(
-                nimbusOperation,
-                RtamoSplashScreenOperation(installReferrerHandlingService, rtamoHandler),
-            ),
-        )
+        return nimbusOperation
     }
 
     private fun setupTheme() {
@@ -1444,6 +1483,27 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity, Crash
             webExtensionTitle = webExtensionState.name,
         )
         navHost.navController.navigate(action)
+    }
+
+    private fun openOptionsPage(activeOptionsPage: ActiveOptionsPage) {
+        createOpenOptionsPageDirections(activeOptionsPage)?.let {
+            navHost.navController.navigate(it)
+        }
+    }
+
+    @VisibleForTesting
+    internal fun createOpenOptionsPageDirections(activeOptionsPage: ActiveOptionsPage): NavDirections? {
+        val extensionState = components.core.store.state.extensions.values.firstOrNull {
+            it.activeOptionsPage == activeOptionsPage
+        }
+
+        return extensionState?.let {
+            NavGraphDirections.actionGlobalWebExtensionActionOptionsPageFragment(
+                optionsPageUrl = activeOptionsPage.url,
+                webExtensionName = activeOptionsPage.name,
+                webExtensionId = it.id,
+            )
+        }
     }
 
     /**

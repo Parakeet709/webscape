@@ -3,13 +3,14 @@
 
 "use strict";
 
+requestLongerTimeout(3);
+
 function checkForPrompt(prefVal) {
   return async function () {
     await SpecialPowers.pushPrefEnv({
       set: [
         ["privacy.history.custom", true],
         ["browser.privatebrowsing.autostart", !prefVal],
-        ["browser.settings-redesign.enabled", true],
       ],
     });
 

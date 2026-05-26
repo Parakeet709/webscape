@@ -12,16 +12,36 @@
   display: flex;
   flex-direction: column;
   box-shadow: var(--box-shadow-level-2);
+  height: 100%;
+  position: relative;
+
+  @include widget-base-style;
 
   &:hover,
-  &:focus-within {
+  &:has(:focus-visible) {
     outline: 1px solid var(--border-color-deemphasized);
     box-shadow: var(--card-box-shadow-hover);
   }
 
-  &.medium-widget {
-    grid-row: span 2;
+  &.is-followed-highlight {
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 2px; /* stylelint-disable-line declaration-property-value-disallowed-list */
+      background: var(--sports-followed-gradient);
+      // Cuts a hole in the middle so only the 2px outer ring shows,
+      // turning the gradient fill into a gradient border.
+      mask:
+        linear-gradient(#FFF 0 0) content-box,
+        linear-gradient(#FFF 0 0);
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+  }
 
+  &.medium-widget {
     .sports-title-wrapper {
       align-items: center;
       margin-block-end: 0;
@@ -38,11 +58,19 @@
     .sports-buttons-wrapper {
       margin-block-start: var(--space-medium);
     }
+
+    .sports-body {
+      padding-block-end: 0;
+      justify-content: space-between;
+    }
+
+    .match-highlight-view {
+      align-self: first baseline;
+      margin-block-end: auto;
+    }
   }
 
   &.large-widget {
-    grid-row: span 4;
-
     .sports-intro-wrapper {
       margin-block-start: var(--space-large);
     }
@@ -65,6 +93,28 @@
   &.sports-follow-state {
     .sports-title-wrapper {
       padding: var(--space-small);
+    }
+  }
+
+  &.sports-matches {
+    .sports-title-wrapper {
+      grid-template-columns: auto 1fr auto;
+    }
+  }
+
+  &.sports-key-dates {
+    .sports-title-wrapper {
+      grid-template-columns: auto 1fr auto;
+
+      > h3 {
+        font-size: var(--font-size-small);
+        margin-block: 0;
+        justify-self: start;
+        align-self: center;
+        margin-inline-start: var(--space-small);
+        font-weight: var(--font-weight);
+        color: var(--text-color-deemphasized);
+      }
     }
   }
 }
@@ -92,11 +142,16 @@
 }
 
 .sports:hover,
-.sports:focus-within {
+.sports:has(:focus-visible) {
   .sports-context-menu-wrapper {
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+// Handles keyboard focus on moz-button, since :has(:focus-visible) doesn't include shadow DOM
+.sports-context-menu-wrapper:focus-within {
+  opacity: 1;
 }
 
 .sports-body {
@@ -132,7 +187,7 @@
   flex-direction: column;
   align-items: center;
 
-  .sports-view-schedule {
+  .sports-view-matches {
     margin-block-end: var(--space-small);
   }
 }
@@ -162,6 +217,183 @@
   overflow-y: auto;
 }
 
+.sports-follow-teams-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  cursor: pointer;
+
+  &.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+
+    moz-checkbox {
+      // Lets the row's not-allowed cursor show through; we can't reach the cursor on the input in the shadow DOM from outside.
+      pointer-events: none;
+    }
+
+    .sports-team-flag,
+    .sports-team-name {
+      cursor: not-allowed;
+    }
+  }
+}
+
+.sports-team-flag {
+  width: 30px;
+  height: var(--dimension-20);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.sports-team-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-size-root);
+  color: var(--text-color);
+}
+
+.sports-back-button {
+  grid-column: 1;
+  justify-self: start;
+
+  &:dir(rtl) {
+    transform: scaleX(-1);
+  }
+}
+
+.sports-matches-tabs {
+  display: flex;
+}
+
+.sports-matches-view {
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.sports-matches-tab-panel {
+  width: 100%;
+  height: 100%;
+}
+
+.sports-matches-view > div > moz-button {
+  display: block;
+  margin-inline: auto;
+}
+
+.sports-matches-list-section > ul {
+  list-style: none;
+  padding-inline-start: 0;
+  margin-block: 0;
+}
+
+.sports-matches-list {
+  margin-block-start: var(--space-medium);
+}
+
+.sports-section-label {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+}
+
+.sports-matches-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-large);
+}
+
+@keyframes sports-section-label-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.sports-section-label-live {
+  color: var(--text-color-error);
+  font-weight: var(--font-weight-heading);
+  animation: sports-section-label-live-pulse 1.6s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+.sports-matches-list-section {
+  & + & {
+    border-block-start: 1px solid var(--border-color-deemphasized);
+    padding-block-start: calc(var(--space-large) + var(--space-xsmall));
+    margin-block-start: calc(var(--space-large) + var(--space-xsmall));
+  }
+}
+
+.sports-followed-only-toggle {
+  display: block;
+  margin-block-end: var(--space-small);
+}
+
+// This rule applies to the "Show less" button only when the full list of upcoming games or previous results is shown
+.sports-matches-tab-panel:not(:has(.match-highlight-view)) > moz-button {
+  margin-block-start: var(--space-medium);
+  padding-block-end: var(--space-small);
+}
+
+.sports-matches-tab-panel:has(.match-highlight-view) {
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.sports-matches-tab-panel:has(.match-highlight-view) > .sports-section-label {
+  position: absolute;
+  margin-block-start: var(--space-medium);
+}
+
+.large-widget
+.sports-matches-tab-panel:has(.match-highlight-view)
+> .match-highlight-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.sports-matches-tab-panel:has(.match-highlight-view) > moz-button {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
+  width: fit-content;
+}
+
+.sports-matches-tab {
+  flex: 1;
+  padding-block: var(--space-small);
+  border: none;
+  border-block-end: 2px solid transparent;
+  font-size: var(--font-size-small);
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+  }
+
+  &.is-active {
+    font-weight: var(--font-weight-semibold);
+    border-block-end-color: var(--color-accent-primary);
+  }
+
+  &.is-disabled {
+    color: var(--text-color-disabled);
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
 .sports-cancel-button {
   grid-column: 3;
   justify-self: end;
@@ -179,4 +411,31 @@
   position: sticky;
   inset-inline-end: 0;
   inset-block-end: var(--space-xxsmall);
+}
+
+// Key dates state
+.sports-key-dates {
+  display: flex;
+  flex-direction: column;
+
+  .sports-key-dates-list {
+    list-style: none;
+    padding-inline-start: var(--space-xsmall);
+    margin-block-start: 0;
+
+    .sports-key-dates-item {
+      display: flex;
+      justify-content: space-between;
+      margin-block-end: var(--space-medium);
+      font-size: var(--font-size-small);
+
+      &:last-of-type {
+        margin-block-end: 0;
+      }
+    }
+  }
+
+  moz-button {
+    align-self: center;
+  }
 }

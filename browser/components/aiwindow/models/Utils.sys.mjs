@@ -11,7 +11,6 @@
  */
 
 import { createEngine } from "chrome://global/content/ml/EngineProcess.sys.mjs";
-import { getFxAccountsSingleton } from "resource://gre/modules/FxAccounts.sys.mjs";
 import {
   OAUTH_CLIENT_ID,
   SCOPE_PROFILE_UID,
@@ -21,6 +20,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  getFxAccountsSingleton: "resource://gre/modules/FxAccounts.sys.mjs",
 });
 
 const APIKEY_PREF = "browser.smartwindow.apiKey";
@@ -72,6 +72,8 @@ export const MODEL_FEATURES = Object.freeze({
   MEMORIES_DEDUPLICATION_USER: "memories-deduplication-user",
   MEMORIES_SENSITIVITY_FILTER_SYSTEM: "memories-sensitivity-filter-system",
   MEMORIES_SENSITIVITY_FILTER_USER: "memories-sensitivity-filter-user",
+  MEMORIES_QUALITY_FILTER_SYSTEM: "memories-quality-filter-system",
+  MEMORIES_QUALITY_FILTER_USER: "memories-quality-filter-user",
   // memories usage features
   MEMORIES_MESSAGE_CLASSIFICATION_SYSTEM:
     "memories-message-classification-system",
@@ -84,6 +86,8 @@ export const MODEL_FEATURES = Object.freeze({
   DISABLE_TABLE_INSTRUCTIONS: "disable-table-instructions",
   ENABLE_TABLE_INSTRUCTIONS: "enable-table-instructions",
 });
+
+/** @typedef {(typeof MODEL_FEATURES)[keyof typeof MODEL_FEATURES]} ModelFeature */
 
 /**
  * Service types for different AI Window features
@@ -137,12 +141,14 @@ export const FEATURE_MAJOR_VERSIONS = Object.freeze({
   [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_FOLLOWUP]: 1,
   [MODEL_FEATURES.CONVERSATION_SUGGESTIONS_ASSISTANT_LIMITATIONS]: 1,
   // memories generation feature versions
-  [MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM]: 1,
-  [MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_USER]: 1,
+  [MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_SYSTEM]: 2,
+  [MODEL_FEATURES.MEMORIES_INITIAL_GENERATION_USER]: 2,
   [MODEL_FEATURES.MEMORIES_DEDUPLICATION_SYSTEM]: 1,
   [MODEL_FEATURES.MEMORIES_DEDUPLICATION_USER]: 1,
   [MODEL_FEATURES.MEMORIES_SENSITIVITY_FILTER_SYSTEM]: 1,
   [MODEL_FEATURES.MEMORIES_SENSITIVITY_FILTER_USER]: 1,
+  [MODEL_FEATURES.MEMORIES_QUALITY_FILTER_SYSTEM]: 1,
+  [MODEL_FEATURES.MEMORIES_QUALITY_FILTER_USER]: 1,
   // memories usage feature versions
   [MODEL_FEATURES.MEMORIES_MESSAGE_CLASSIFICATION_SYSTEM]: 1,
   [MODEL_FEATURES.MEMORIES_MESSAGE_CLASSIFICATION_USER]: 1,
@@ -218,39 +224,57 @@ function selectMainConfig(
     return null;
   }
 
-  // We only allow customization of main assistant model unless user is
-  //  using custom endpoint (which is handled by _applyCustomEndpointModel)
+  // We only allow customization of main assistant model ("chat" feature)
+  // We figure out which model the user wants and load prompts for that model
+  // If we can't find a config for the user selection, we load the generic one
   if (feature === MODEL_FEATURES.CHAT) {
-    // If user specified a model preference, find that model's config
-    if (userModel) {
-      const userModelConfig = sameMajor.find(
-        config => config.model === userModel
-      );
-      if (userModelConfig) {
-        return userModelConfig;
-      }
-      // User's model not found in this major version - fall through to defaults
-      console.warn(
-        `User model "${userModel}" not found for major version ${majorVersion} for feature '${feature}', using modelChoice ${modelChoiceId}`
-      );
-    }
+    if (modelChoiceId !== "0") {
+      // First check the choice ID. If it's not 0, use the model associated with that ID
 
-    // If user specified a model preference, find that model's config
-    if (modelChoiceId) {
+      // Look for config based on model choice ID
       const userModelConfig = sameMajor.find(
         config => config.model_choice_id == modelChoiceId
       );
+      // Return if we found it
       if (userModelConfig) {
         return userModelConfig;
       }
-      // User's model not found in this major version - fall through to defaults
+      // Config for user's model choice ID not found in this major version - fall through to generic
       console.warn(
-        `User model choice "${modelChoiceId}" not found for major version ${majorVersion} for feature '${feature}', using default`
+        `User model choice "${modelChoiceId}" not found for major version ${majorVersion} for feature '${feature}', using generic`
+      );
+    } else {
+      // If the choice ID is 0 or null, check the provided model name
+
+      // Look for config based on the user-provided model name
+      // This is the case where the user provides a model name for which we have a fine-tuned prompt
+      const userModelConfig = sameMajor.find(
+        config => config.model === userModel
+      );
+      // Return if we found it
+      if (userModelConfig) {
+        return userModelConfig;
+      }
+      // Config for user-provided model name not found in this major version - fall through to generic
+      console.warn(
+        `User model "${userModel}" not found for major version ${majorVersion} for feature '${feature}', using generic`
       );
     }
+
+    // If both cases above failed, load the generic config
+    const genericConfig = sameMajor.find(
+      config => config.model === GENERIC_MODEL_NAME
+    );
+    // Inject the user model if one was provided
+    // If one wasn't, we return the generic config plain, which will intentionally break inference
+    if (userModel) {
+      genericConfig.model = userModel;
+    }
+    return genericConfig;
   }
 
-  // No user model pref OR user's model not found: use default
+  // **For all features other than "chat"**
+  // If no user model pref OR user's model not found: use default
   const defaultConfig = sameMajor.find(config => config.is_default === true);
   if (defaultConfig) {
     return defaultConfig;
@@ -373,24 +397,6 @@ export class openAIEngine {
       );
       this.model = userModel;
     }
-  }
-
-  /**
-   * Overrides the model config with generic config
-   *
-   * @param {Array} featureConfigs - All configs for the feature from Remote Settings
-   * @param {number} majorVersion - Required major version for the feature
-   *
-   * @private
-   */
-  _loadGenericChatPrompt(featureConfigs, majorVersion) {
-    console.warn(`Custom endpoint detected. Using generic chat prompt`);
-    this.#configs[MODEL_FEATURES.CHAT] = selectMainConfig(featureConfigs, {
-      majorVersion,
-      userModel: GENERIC_MODEL_NAME,
-      modelChoiceId: "",
-      feature: MODEL_FEATURES.CHAT,
-    });
   }
 
   /**
@@ -526,13 +532,6 @@ export class openAIEngine {
       featureConfigs,
       majorVersion
     );
-
-    if (openAIEngine.hasCustomEndpoint()) {
-      if (feature === MODEL_FEATURES.CHAT) {
-        this._loadGenericChatPrompt(featureConfigs, majorVersion);
-      }
-      this._applyCustomEndpointModel();
-    }
   }
 
   /**
@@ -642,7 +641,7 @@ export class openAIEngine {
    */
   static async getFxAccountToken() {
     try {
-      const fxAccounts = getFxAccountsSingleton();
+      const fxAccounts = lazy.getFxAccountsSingleton();
       return await fxAccounts.getOAuthToken({
         scope: [SCOPE_SMART_WINDOW, SCOPE_PROFILE_UID],
         client_id: OAUTH_CLIENT_ID,
@@ -651,6 +650,21 @@ export class openAIEngine {
       console.warn("Error obtaining FxA token:", error);
       return null;
     }
+  }
+
+  /**
+   * Checks if an error is an HTTP 429 from MLPA. MLPA returns 429 for several
+   * sub-conditions (budget overage, QPS rate limit, upstream limit, etc.)
+   * callers should back off the same way regardless of the sub-code.
+   *
+   * @param {Error} error  The error to check
+   * @returns {boolean}    True if the error is a 429
+   */
+  static is429Error(error) {
+    if (!error) {
+      return false;
+    }
+    return error.status === 429 || !!error.message?.includes("429 status code");
   }
 
   /**
@@ -737,7 +751,7 @@ export class openAIEngine {
         "LLM request returned a 401 - revoking our token and retrying"
       );
 
-      const fxAccounts = getFxAccountsSingleton();
+      const fxAccounts = lazy.getFxAccountsSingleton();
       const oldToken = content.fxAccountToken;
       if (oldToken) {
         await fxAccounts.removeCachedOAuthToken({ token: oldToken });
@@ -834,7 +848,7 @@ export class openAIEngine {
         "LLM streaming request returned a 401 - revoking our token and retrying"
       );
 
-      const fxAccounts = getFxAccountsSingleton();
+      const fxAccounts = lazy.getFxAccountsSingleton();
       const oldToken = options.fxAccountToken;
       if (oldToken) {
         await fxAccounts.removeCachedOAuthToken({ token: oldToken });
@@ -887,7 +901,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   openAIEngine,
   "endpoint",
   ENDPOINT_PREF,
-  ""
+  "https://mlpa-prod-prod-mozilla.global.ssl.fastly.net/v1"
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(openAIEngine, "apiKey", APIKEY_PREF, "");

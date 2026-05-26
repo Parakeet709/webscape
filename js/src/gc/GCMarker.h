@@ -49,6 +49,7 @@ class AutoUpdateMarkStackRanges;
 class Cell;
 class MarkStackIter;
 class ParallelMarkTask;
+template <uint32_t markingOptions>
 class UnmarkGrayTracer;
 
 // Ephemerons are edges from a source to a target that are only materialized
@@ -340,7 +341,7 @@ class MarkingTracerT
   virtual ~MarkingTracerT() = default;
 
   template <typename T>
-  void onEdge(T** thingp, const char* name);
+  bool onEdge(T** thingp, const char* name);
   friend class GenericTracerImpl<MarkingTracerT<markingOptions>>;
 
   GCMarker* gcMarker();
@@ -678,6 +679,7 @@ class GCMarker {
 #endif
 
   Vector<JS::GCCellPtr, 0, SystemAllocPolicy> unmarkGrayStack;
+  template <uint32_t markingOptions>
   friend class gc::UnmarkGrayTracer;
 
   /* Track the state of marking. */

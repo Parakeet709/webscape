@@ -216,6 +216,10 @@ export const INITIAL_STATE = {
     initialized: false,
     widgetState: "sports-intro",
     selectedTeams: [],
+    matchesTab: "upcoming",
+    // Per-tab "Only followed teams" filter toggle. Defaults to on so users
+    // who follow teams see the filtered list right away.
+    followedOnly: { results: true, upcoming: true },
   },
 };
 
@@ -1212,6 +1216,13 @@ function SportsWidget(prevState = INITIAL_STATE.SportsWidget, action) {
       return { ...prevState, widgetState: action.data };
     case at.WIDGETS_SPORTS_SET_SELECTED_TEAMS:
       return { ...prevState, selectedTeams: action.data };
+    case at.WIDGETS_SPORTS_SET_MATCHES_TAB:
+      return { ...prevState, matchesTab: action.data };
+    case at.WIDGETS_SPORTS_SET_FOLLOWED_ONLY:
+      return {
+        ...prevState,
+        followedOnly: { ...prevState.followedOnly, ...action.data },
+      };
     default:
       return prevState;
   }

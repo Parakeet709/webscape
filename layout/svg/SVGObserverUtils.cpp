@@ -1707,15 +1707,8 @@ void SVGObserverUtils::RemoveTemplateObserver(nsIFrame* aFrame) {
 
 Element* SVGObserverUtils::GetAndObserveBackgroundImage(nsIFrame* aFrame,
                                                         const nsAtom* aHref) {
-  bool found;
   URIObserverHashtable* hashtable =
-      aFrame->GetProperty(BackgroundImageProperty(), &found);
-  if (!found) {
-    hashtable = new URIObserverHashtable();
-    aFrame->AddProperty(BackgroundImageProperty(), hashtable);
-  } else {
-    MOZ_ASSERT(hashtable, "this property should only store non-null values");
-  }
+      aFrame->GetOrCreateDeletableProperty(BackgroundImageProperty());
   nsAutoString localRef = u"#"_ns + nsDependentAtomString(aHref);
   auto* doc = aFrame->GetContent()->OwnerDoc();
   nsIURI* baseURI = aFrame->GetContent()->GetBaseURI();
@@ -1868,35 +1861,23 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
   NS_ASSERTION(!aFrame->GetPrevContinuation(),
                "aFrame must be first continuation");
 
-  auto* element = Element::FromNodeOrNull(aFrame->GetContent());
-  if (!element) {
-    return;
-  }
-
-  // If the rendering has changed, the bounds may well have changed too:
-  aFrame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
-
-  if (auto* observers = GetObserverSet(element)) {
-    observers->InvalidateAll(aFrame->HasAnyStateBits(NS_FRAME_IN_REFLOW));
-    return;
-  }
-
-  if (aFrame->IsSVGRenderingObserverContainer()) {
-    return;
-  }
+  bool ceaseInvalidation = false;
 
   // Check ancestor SVG containers. The root frame cannot be of type
   // eSVGContainer so we don't have to check f for null here.
-  for (nsIFrame* f = aFrame->GetParent(); f->IsSVGContainerFrame();
+  for (nsIFrame* f = aFrame; f->IsSVGContainerFrame() || f == aFrame;
        f = f->GetParent()) {
-    if (auto* element = Element::FromNode(f->GetContent())) {
+    f->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
+    if (ceaseInvalidation) {
+      continue;
+    }
+    if (auto* element = Element::FromNodeOrNull(f->GetContent())) {
       if (auto* observers = GetObserverSet(element)) {
         observers->InvalidateAll(f->HasAnyStateBits(NS_FRAME_IN_REFLOW));
-        return;
       }
     }
     if (f->IsSVGRenderingObserverContainer()) {
-      return;
+      ceaseInvalidation = true;
     }
   }
 }

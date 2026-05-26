@@ -4,6 +4,7 @@
 #ifndef nsGenericHTMLElement_h_
 #define nsGenericHTMLElement_h_
 
+#include <algorithm>
 #include <cstdint>
 
 #include "mozilla/Attributes.h"
@@ -358,6 +359,18 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
   void SetAutofocus(bool aVal, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::autofocus, aVal, aRv);
+  }
+
+  uint32_t HeadingOffset() const {
+    return std::min(GetUnsignedIntAttr(nsGkAtoms::headingoffset, 0), 8u);
+  }
+  void SetHeadingOffset(uint32_t aValue, ErrorResult& aError) {
+    SetUnsignedIntAttr(nsGkAtoms::headingoffset, aValue, 0, aError);
+  }
+
+  bool HeadingReset() const { return GetBoolAttr(nsGkAtoms::headingreset); }
+  void SetHeadingReset(bool aValue) {
+    SetBoolAttr(nsGkAtoms::headingreset, aValue);
   }
 
  protected:
@@ -1472,6 +1485,7 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Pre)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Progress)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Script)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Select)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(SelectedContent)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Slot)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Source)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Span)

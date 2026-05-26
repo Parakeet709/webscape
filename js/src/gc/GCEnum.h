@@ -136,6 +136,7 @@ enum class GCAbortReason {
   _(WasmGlobalCell)                        \
   _(WasmResolveResponseClosure)            \
   _(WasmModule)                            \
+  _(WasmComponent)                         \
   _(WasmTableTable)                        \
   _(WasmExceptionData)                     \
   _(WasmTagType)                           \
@@ -153,7 +154,6 @@ enum class GCAbortReason {
   _(SharedArrayRawBuffer)                  \
   _(XDRBufferElements)                     \
   _(GlobalObjectData)                      \
-  _(ProxyExternalValueArray)               \
   _(GraphLoadingStateRecord)
 
 #define JS_FOR_EACH_MEMORY_USE(_)  \

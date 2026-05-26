@@ -51,7 +51,7 @@ features:
             "pocket-sponsored-stories": true,
             "synced-tabs": true,
             "collections": true,
-            "privacy-report": false,
+            "privacy-report": true,
           }
     defaults:
       - channel: nightly
@@ -64,7 +64,7 @@ features:
             "pocket": true,
             "synced-tabs": true,
             "collections": true,
-            "privacy-report": false,
+            "privacy-report": true,
           }
         }
   nimbus-validation:
@@ -274,18 +274,6 @@ features:
         type: Boolean
         default: false
 
-  print:
-    description: A feature for printing from the share or browser menu.
-    variables:
-      share-print-enabled:
-        description: If true, a print button from the share menu is available.
-        type: Boolean
-        default: true
-      browser-print-enabled:
-        description: If true, a print button from the browser menu is available.
-        type: Boolean
-        default: true
-
   sent-from-firefox:
     description: A feature that allows the user to add a download firefox footer to a shared link.
     variables:
@@ -443,22 +431,6 @@ features:
           'global-settings-enabled' must also be enabled for users to access this feature.
         type: Boolean
         default: true
-
-  navigation-toolbar:
-    description: Feature for navigation toolbar.
-    variables:
-      enabled:
-        description: >
-          When the feature is enabled then the user will see the new navigation toolbar.
-        type: Boolean
-        default: false
-    defaults:
-      - channel: developer
-        value:
-          enabled: true
-      - channel: nightly
-        value:
-          enabled: true
 
   minimal-addressbar:
     description: Show a smaller height bottom addressbar with just the URL.
@@ -690,18 +662,6 @@ features:
           Negative cache TTL in seconds for the real-time request simulator.
         type: Int
         default: 300
-
-  menu-redesign:
-    description: Control the new menu redesign.
-    variables:
-      report-site-issue:
-        description: If true, report site issue menu item and preview is available.
-        type: Boolean
-        default: true
-      menu-banner:
-        description: If true, the menu banner is visible.
-        type: Boolean
-        default: true
 
   firefox-jp-guide-default-site:
     description: >
@@ -960,29 +920,6 @@ features:
         type: Boolean
         default: true
 
-  settings-search:
-      description: Feature to allow users to search for settings.
-      variables:
-        enabled:
-          description: >
-            Enables the user to search for settings.
-          type: Boolean
-          default: true
-
-  toolbar-redesign-option:
-    description: Control the visibility of toolbar redesign option in settings.
-    variables:
-      show-options:
-        description: >
-          Whether or not the toolbar redesign option is visible to the user.  This allows the user to switch between simple and expanded toolbar.
-        type: Boolean
-        default: true
-      show-customization:
-        description: >
-          Whether or not the simple/expanded toolbar customization option is visible to the user.
-        type: Boolean
-        default: true
-
   tab-management-enhancements:
     description: Control the visibility of the tab management enhancements.
     variables:
@@ -1003,15 +940,6 @@ features:
         value:
           opening_animation_enabled: true
 
-  tab-search:
-    description: Control the visibility of the tab search feature.
-    variables:
-      enabled:
-        description: >
-          Whether or not to enable the tab search feature.
-        type: Boolean
-        default: true
-
   tab-groups:
     description: Control the visibility of the tab groups feature.
     variables:
@@ -1026,7 +954,7 @@ features:
           enabled: false
       - channel: beta
         value:
-          enabled: false
+          enabled: true
       - channel: nightly
         value:
           enabled: true
@@ -1044,10 +972,18 @@ features:
           enabled: false
       - channel: beta
         value:
-          enabled: false
+          enabled: true
       - channel: nightly
         value:
-          enabled: false
+          enabled: true
+
+  marketing-onboarding-card:
+    description: A temporary feature to control the marketing onboarding card shown during the onboarding flow.
+    variables:
+      enabled:
+        description: If false, the marketing onboarding card will never be shown.
+        type: Boolean
+        default: true
 
   suppress-sponsored-top-sites:
     description: Suppress sponsored top sites for new users for 14 days.
@@ -1177,6 +1113,13 @@ features:
         description: If true, Native Share Sheet is enabled.
         type: Boolean
         default: false
+    defaults:
+      - channel: developer
+        value:
+          enabled: true
+      - channel: nightly
+        value:
+          enabled: true
 
   add-shortcuts-improvement:
     description: Feature to enable Add Shortcuts improvement for users on Firefox on Android.
@@ -1303,6 +1246,29 @@ features:
         description: If true, Homepage Sports Widget is enabled.
         type: Boolean
         default: false
+      force-one-week-to-world-cup:
+        description: >
+          If true, treat the user as being within one week of the World Cup kickoff regardless of the
+          device date. Used to roll out the pre-tournament pager (follow your team + view-schedule cards)
+          ahead of the calendar date for testing or staggered launches. The natural date-based check
+          still applies when this is false (the default).
+        type: Boolean
+        default: false
+
+  webcompat-reporter-enhancements:
+    description: Feature to enable WebCompat Reporter enhancements for users on Firefox Android.
+    variables:
+      enabled:
+        description: If true, WebCompat Reporter enhancements is enabled.
+        type: Boolean
+        default: false
+    defaults:
+      - channel: nightly
+        value:
+          enabled: false
+      - channel: developer
+        value:
+          enabled: true
 
 types:
   objects:

@@ -148,7 +148,7 @@ class TextPropertyEditor {
   }
 
   /**
-   * Get the rule to the current text property
+   * Get the Rule model to the current text property
    */
   get rule() {
     return this.prop.rule;
@@ -176,8 +176,7 @@ class TextPropertyEditor {
       class: "ruleview-propertycontainer",
     });
 
-    const indent =
-      ((this.ruleEditor.rule.domRule.ancestorData.length || 0) + 1) * 2;
+    const indent = ((this.rule.domRule.ancestorData.length || 0) + 1) * 2;
     createChild(this.container, "span", {
       class: "ruleview-rule-indent clipboard-only",
       textContent: " ".repeat(indent),
@@ -316,9 +315,8 @@ class TextPropertyEditor {
           }
 
           if (event.target.classList.contains("ruleview-variable-link")) {
-            const isRuleInStartingStyle =
-              this.ruleEditor.rule.isInStartingStyle();
-            const rulePseudoElement = this.ruleEditor.rule.pseudoElement;
+            const isRuleInStartingStyle = this.rule.isInStartingStyle();
+            const rulePseudoElement = this.rule.pseudoElement;
             await this.ruleView.highlightProperty(
               event.target.dataset.variableName,
               {
@@ -639,6 +637,7 @@ class TextPropertyEditor {
       },
       inStartingStyleRule: this.rule.isInStartingStyle(),
       isValid: this.isValid(),
+      cssExplainersEnabled: this.ruleView.cssExplainersEnabled,
     };
 
     if (this.rule.darkColorScheme !== undefined) {
@@ -677,7 +676,7 @@ class TextPropertyEditor {
     }
 
     this.ruleView.emit("property-value-updated", {
-      rule: this.prop.rule,
+      rule: this.rule,
       property: name,
       value: val,
     });
@@ -933,7 +932,7 @@ class TextPropertyEditor {
       !this.editing &&
       this.isValid() &&
       this.prop.overridden &&
-      !this.ruleEditor.rule.isUnmatched
+      !this.rule.isUnmatched
     );
   }
 
@@ -1038,7 +1037,7 @@ class TextPropertyEditor {
     this.filterProperty.addEventListener(
       "click",
       event => {
-        this.ruleEditor.ruleView.setFilterStyles("`" + this.prop.name + "`");
+        this.ruleView.setFilterStyles("`" + this.prop.name + "`");
         event.stopPropagation();
       },
       { signal: this.abortController.signal }
@@ -1475,7 +1474,7 @@ class TextPropertyEditor {
    *        The move focus direction number.
    */
   remove(direction) {
-    this.ruleEditor.rule.editClosestTextProperty(this.prop, direction);
+    this.rule.editClosestTextProperty(this.prop, direction);
 
     this.prop.remove();
     this.nameSpan.textProperty = null;
@@ -1513,7 +1512,7 @@ class TextPropertyEditor {
     // If the value is not empty (or is an empty variable) and unchanged,
     // revert the property back to its original value and enabled or disabled state
     if ((value.trim() || isVariable) && isValueUnchanged) {
-      const onPropertySet = this.ruleEditor.rule.previewPropertyValue(
+      const onPropertySet = this.rule.previewPropertyValue(
         this.prop,
         val.value,
         val.priority
@@ -1660,11 +1659,7 @@ class TextPropertyEditor {
     }
 
     const val = parseSingleValue(this.cssProperties.isKnown, value);
-    this.ruleEditor.rule.previewPropertyValue(
-      this.prop,
-      val.value,
-      val.priority
-    );
+    this.rule.previewPropertyValue(this.prop, val.value, val.priority);
   };
 
   /**

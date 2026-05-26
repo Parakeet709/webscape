@@ -1638,11 +1638,13 @@ struct IdToIndexComparator {
 static const PropertyInfo* XrayFindOwnPropertyInfo(
     JSContext* cx, DOMObjectType type, JS::Handle<jsid> id,
     const NativeProperties* nativeProperties) {
-  if ((type == eInterfacePrototype || type == eGlobalInstance) &&
-      MOZ_UNLIKELY(nativeProperties->iteratorAliasMethodIndex >= 0) &&
-      id.isWellKnownSymbol(JS::SymbolCode::iterator)) {
-    return nativeProperties->MethodPropertyInfos() +
-           nativeProperties->iteratorAliasMethodIndex;
+  if (type == eInterfacePrototype || type == eGlobalInstance) {
+    if (nativeProperties->iteratorAliasMethodIndex >= 0) [[unlikely]] {
+      if (id.isWellKnownSymbol(JS::SymbolCode::iterator)) {
+        return nativeProperties->MethodPropertyInfos() +
+               nativeProperties->iteratorAliasMethodIndex;
+      }
+    }
   }
 
   size_t idx;
@@ -2412,12 +2414,10 @@ GlobalObject::GlobalObject(JSContext* aCx, JSObject* aObject)
     // aCx correctly represents the current global here.
     obj = js::CheckedUnwrapDynamic(obj, aCx, /* stopAtWindowProxy = */ false);
     if (!obj) {
-      // We should never end up here on a worker thread, since there shouldn't
-      // be any security wrappers to worry about.
-      if (!MOZ_LIKELY(NS_IsMainThread())) {
-        MOZ_CRASH();
-      }
-
+      MOZ_RELEASE_ASSERT(
+          NS_IsMainThread(),
+          "We should never end up here on a worker thread, since there "
+          "shouldn't be any security wrappers to worry about.");
       Throw(aCx, NS_ERROR_XPC_SECURITY_MANAGER_VETO);
       return;
     }
@@ -2894,8 +2894,8 @@ struct LenientThisPolicyMixin {
 
 // There are some LenientThis things on globals, so we inherit from
 // MaybeGlobalThisPolicy.
-struct LenientThisPolicy : public MaybeGlobalThisPolicy,
-                           public LenientThisPolicyMixin {
+struct MOZ_EMPTY_BASES LenientThisPolicy : public MaybeGlobalThisPolicy,
+                                           public LenientThisPolicyMixin {
   // We want the HasValidThisValue of MaybeGlobalThisPolicy.
 
   // We want the ExtractThisObject of MaybeGlobalThisPolicy.
@@ -3011,7 +3011,7 @@ struct MaybeCrossOriginObjectThisPolicy : public MaybeGlobalThisPolicy {
 
 // And in some cases we are dealing with a maybe-cross-origin object _and_ need
 // [LenientThis] behavior.
-struct MaybeCrossOriginObjectLenientThisPolicy
+struct MOZ_EMPTY_BASES MaybeCrossOriginObjectLenientThisPolicy
     : public MaybeCrossOriginObjectThisPolicy,
       public LenientThisPolicyMixin {
   // We want to get all of our behavior from

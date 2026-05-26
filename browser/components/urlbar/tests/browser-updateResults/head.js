@@ -14,6 +14,7 @@ ChromeUtils.defineESModuleGetters(this, {
   UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
@@ -23,10 +24,6 @@ ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
   module.init(this);
   return module;
 });
-
-// How long to wait for view-update mutations to settle (i.e., to finish
-// happening) before assuming they're done and moving on with the test.
-const MUTATION_SETTLE_TIME_MS = 500;
 
 const MAX_RESULTS = 10;
 
@@ -385,41 +382,18 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
     0
   );
 
-  // Don't allow the search to finish until we check the updated rows. We'll
-  // accomplish that by adding a mutation observer to observe completion of the
-  // update and delaying resolving the provider's finishQueryPromise.
-  //
-  // This promise works like this: We add a mutation observer that observes the
-  // view's entire subtree. Every time we observe a mutation, we set
-  // `lastMutationTime` to the current time. Meanwhile, we run an interval that
-  // compares `now` to `lastMutationTime` every time it fires. When the
-  // difference between `now` and `lastMutationTime` is sufficiently large, we
-  // assume the view update is done, and we resolve the promise.
-  let mutationPromise = new Promise(resolve => {
-    let lastMutationTime = ChromeUtils.now();
-    let observer = new MutationObserver(() => {
-      info("Observed mutation");
-      lastMutationTime = ChromeUtils.now();
+  // Hook into onQueryResults to get a reliable signal that #updateResults()
+  // has run for search 2, before the provider finishes.
+  let { promise: viewUpdatePromise, resolve: viewUpdateResolve } =
+    Promise.withResolvers();
+  let stub = sinon
+    .stub(gURLBar.view, "onQueryResults")
+    .callsFake(queryContext => {
+      stub.restore();
+      gURLBar.view.onQueryResults(queryContext);
+      viewUpdateResolve();
     });
-    observer.observe(UrlbarTestUtils.getResultsContainer(window), {
-      attributes: true,
-      characterData: true,
-      childList: true,
-      subtree: true,
-    });
-
-    let interval = setInterval(
-      () => {
-        if (MUTATION_SETTLE_TIME_MS < ChromeUtils.now() - lastMutationTime) {
-          info("No further mutations observed, stopping");
-          clearInterval(interval);
-          observer.disconnect();
-          resolve();
-        }
-      },
-      Math.ceil(MUTATION_SETTLE_TIME_MS / 10)
-    );
-  });
+  registerCleanupFunction(() => stub.restore());
 
   // Now do the second search but don't wait for it to finish.
   let resolveQuery;
@@ -431,9 +405,9 @@ async function doSuggestedIndexTest({ search1, search2, duringUpdate }) {
     value: "test",
   });
 
-  // Wait for the update to finish.
-  info("Waiting for mutations to settle");
-  await mutationPromise;
+  // Wait for the view update.
+  info("Waiting for view update");
+  await viewUpdatePromise;
 
   // Check the rows. We can't use UrlbarTestUtils.getDetailsOfResultAt() here
   // because it waits for the search to finish.

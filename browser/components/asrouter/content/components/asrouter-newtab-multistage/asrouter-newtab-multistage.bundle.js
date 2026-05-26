@@ -386,8 +386,7 @@ function LanguageSwitcher(props) {
     handleAction,
     negotiatedLanguage,
     langPackInstallPhase,
-    messageId,
-    writeInMicrosurvey
+    messageId
   } = props;
   const [isAwaitingLangpack, setIsAwaitingLangpack] = (0,external_React_namespaceObject.useState)(false);
 
@@ -483,9 +482,7 @@ function LanguageSwitcher(props) {
     className: "primary",
     value: "primary_button",
     onClick: () => {
-      MultiStageUtils.sendActionTelemetry(messageId, "download_langpack", "CLICK_BUTTON", {
-        writeInMicrosurvey
-      });
+      MultiStageUtils.sendActionTelemetry(messageId, "download_langpack", "CLICK_BUTTON");
       setIsAwaitingLangpack(true);
     }
   }, content.languageSwitcher.switch ? /*#__PURE__*/external_React_default().createElement(Localized, {
@@ -978,8 +975,7 @@ const AddonsPicker = props => {
   }
   function handleInstallClick(event) {
     const {
-      message_id,
-      writeInMicrosurvey
+      message_id
     } = props;
     let {
       action,
@@ -991,9 +987,7 @@ const AddonsPicker = props => {
       }
     }
     handleAction(event, action);
-    MultiStageUtils.sendActionTelemetry(message_id, source_id, "CLICK_BUTTON", {
-      writeInMicrosurvey
-    });
+    MultiStageUtils.sendActionTelemetry(message_id, source_id, "CLICK_BUTTON");
   }
   function handleAuthorClick(event, authorId) {
     event.stopPropagation();
@@ -1703,7 +1697,8 @@ const EmbeddedMigrationWizard = ({
 const EmbeddedFxBackupOptIn = ({
   handleAction,
   isEncryptedBackup,
-  options
+  options,
+  messageId
 }) => {
   const backupRef = (0,external_React_namespaceObject.useRef)(null);
   const {
@@ -1772,6 +1767,7 @@ const EmbeddedFxBackupOptIn = ({
 
   return /*#__PURE__*/external_React_default().createElement("turn-on-scheduled-backups", {
     ref: backupRef,
+    source: messageId,
     "hide-headers": "",
     "hide-password-input": !isEncryptedBackup || hide_password_input ? "" : undefined,
     "hide-secondary-button": !isEncryptedBackup || hide_secondary_button ? "" : undefined,
@@ -1863,8 +1859,7 @@ const ActionChecklistProgressBar = ({
 };
 const ActionChecklist = ({
   content,
-  message_id,
-  writeInMicrosurvey
+  message_id
 }) => {
   const tiles = content.tiles.data;
   const [progressValue, setProgressValue] = (0,external_React_namespaceObject.useState)(0);
@@ -1908,9 +1903,7 @@ const ActionChecklist = ({
       type,
       data
     });
-    MultiStageUtils.sendActionTelemetry(message_id, source_id, "CLICK_BUTTON", {
-      writeInMicrosurvey
-    });
+    MultiStageUtils.sendActionTelemetry(message_id, source_id, "CLICK_BUTTON");
   }
   return /*#__PURE__*/external_React_default().createElement("div", {
     className: "action-checklist"
@@ -2105,11 +2098,101 @@ const EmbeddedBackupRestore = ({
     onClick: handleAction
   })))) : null);
 };
+;// ./content-src/components/PinnableSitesList.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+// Per-item button states.
+const IDLE = "idle";
+const PENDING = "pending";
+const PINNED = "pinned";
+const PinnableSitesList = ({
+  tile,
+  messageId,
+  handleAction
+}) => {
+  const items = tile?.data;
+  const pinButtonLabel = tile?.pinButtonLabel;
+  const [itemStates, setItemStates] = (0,external_React_namespaceObject.useState)(() => Object.fromEntries((items ?? []).map(item => [item.id, IDLE])));
+  if (!items?.length) {
+    return null;
+  }
+  const setItemState = (id, state) => setItemStates(prev => ({
+    ...prev,
+    [id]: state
+  }));
+  const handlePin = async (event, item) => {
+    setItemState(item.id, PENDING);
+    MultiStageUtils.sendActionTelemetry(messageId, item.id, "CLICK_BUTTON");
+    const result = await handleAction(event, {
+      type: "PIN_TASKBAR_TAB",
+      needsAwait: true,
+      data: {
+        url: item.url,
+        name: item.name,
+        iconUrl: item.iconUrl
+      }
+    });
+    let pinResultLabel;
+    if (result === true) {
+      pinResultLabel = "success";
+    } else if (result === null) {
+      pinResultLabel = "already_pinned";
+    } else {
+      pinResultLabel = "failure";
+    }
+    MultiStageUtils.sendActionTelemetry(messageId, item.id, "PIN_SITE", {
+      result: pinResultLabel
+    });
+
+    // Re-enable the button only on explicit failure so the user can retry.
+    setItemState(item.id, result === false ? IDLE : PINNED);
+  };
+  return /*#__PURE__*/external_React_default().createElement("ul", {
+    className: "pinnable-sites-list"
+  }, items.map(item => {
+    const nameId = `pinnable-site-name-${item.id}`;
+    const state = itemStates[item.id] ?? IDLE;
+    const isPendingOrPinned = state === PENDING || state === PINNED;
+    return /*#__PURE__*/external_React_default().createElement("li", {
+      key: item.id,
+      className: "pinnable-sites-item"
+    }, /*#__PURE__*/external_React_default().createElement("img", {
+      className: "pinnable-sites-icon",
+      src: item.iconUrl,
+      alt: ""
+    }), /*#__PURE__*/external_React_default().createElement("div", {
+      className: "pinnable-sites-text"
+    }, /*#__PURE__*/external_React_default().createElement(Localized, {
+      text: item.title ?? item.name
+    }, /*#__PURE__*/external_React_default().createElement("span", {
+      id: nameId,
+      className: "pinnable-sites-name"
+    })), item.description && /*#__PURE__*/external_React_default().createElement(Localized, {
+      text: item.description
+    }, /*#__PURE__*/external_React_default().createElement("span", {
+      className: "pinnable-sites-description"
+    }))), /*#__PURE__*/external_React_default().createElement("button", {
+      className: "pinnable-sites-pin-button primary",
+      disabled: isPendingOrPinned,
+      onClick: e => handlePin(e, item),
+      "aria-describedby": nameId
+    }, pinButtonLabel && /*#__PURE__*/external_React_default().createElement(Localized, {
+      text: pinButtonLabel
+    }, /*#__PURE__*/external_React_default().createElement("span", null))));
+  }));
+};
 ;// ./content-src/components/ContentTiles.jsx
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -2256,9 +2339,7 @@ const ContentTiles = props => {
   }, []);
   const toggleTile = (index, tile) => {
     const tileId = `${tile.type}${tile.id ? "_" : ""}${tile.id ?? ""}_header`;
-    MultiStageUtils.sendActionTelemetry(props.messageId, tileId, "CLICK_BUTTON", {
-      writeInMicrosurvey: props.writeInMicrosurvey
-    });
+    MultiStageUtils.sendActionTelemetry(props.messageId, tileId, "CLICK_BUTTON");
     if (tile.type === "link" && tile.action) {
       props.handleAction({
         currentTarget: {
@@ -2271,9 +2352,7 @@ const ContentTiles = props => {
   };
   const toggleTiles = () => {
     setTilesHeaderExpanded(prev => !prev);
-    MultiStageUtils.sendActionTelemetry(props.messageId, "content_tiles_header", "CLICK_BUTTON", {
-      writeInMicrosurvey: props.writeInMicrosurvey
-    });
+    MultiStageUtils.sendActionTelemetry(props.messageId, "content_tiles_header", "CLICK_BUTTON");
   };
   function getTileMultiSelects(screenMultiSelects, index) {
     return screenMultiSelects?.[`tile-${index}`];
@@ -2337,8 +2416,7 @@ const ContentTiles = props => {
       installedAddons: props.installedAddons,
       message_id: props.messageId,
       handleAction: props.handleAction,
-      layout: content.position,
-      writeInMicrosurvey: props.writeInMicrosurvey
+      layout: content.position
     }), ["theme", "single-select"].includes(tile.type) && tile.data && /*#__PURE__*/external_React_default().createElement(SingleSelect, {
       content: {
         tiles: tile
@@ -2374,8 +2452,7 @@ const ContentTiles = props => {
       }
     }), tile.type === "action_checklist" && tile.data && /*#__PURE__*/external_React_default().createElement(ActionChecklist, {
       content: content,
-      message_id: props.messageId,
-      writeInMicrosurvey: props.writeInMicrosurvey
+      message_id: props.messageId
     }), tile.type === "embedded_browser" && tile.data?.url && /*#__PURE__*/external_React_default().createElement(EmbeddedBrowser, {
       url: tile.data.url,
       style: tile.data.style
@@ -2388,13 +2465,19 @@ const ContentTiles = props => {
     }), tile.type === "fx_backup_file_path" && /*#__PURE__*/external_React_default().createElement(EmbeddedFxBackupOptIn, {
       handleAction: props.handleAction,
       isEncryptedBackup: content.isEncryptedBackup,
-      options: tile.options
+      options: tile.options,
+      messageId: props.messageId
     }), tile.type === "fx_backup_password" && /*#__PURE__*/external_React_default().createElement(EmbeddedFxBackupOptIn, {
       handleAction: props.handleAction,
       isEncryptedBackup: content.isEncryptedBackup,
-      options: tile.options
+      options: tile.options,
+      messageId: props.messageId
     }), tile.type === "confirmation-checklist" && tile.data && /*#__PURE__*/external_React_default().createElement(ConfirmationChecklist, {
       content: tile.data,
+      handleAction: props.handleAction
+    }), tile.type === "pinnable_sites" && tile.data && /*#__PURE__*/external_React_default().createElement(PinnableSitesList, {
+      tile: tile,
+      messageId: props.messageId,
       handleAction: props.handleAction
     })) : null);
   };
@@ -2596,14 +2679,15 @@ const MultiStageProtonScreen = props => {
     addonIconURL: props.addonIconURL,
     themeScreenshots: props.themeScreenshots,
     messageId: props.messageId,
-    writeInMicrosurvey: props.writeInMicrosurvey,
     negotiatedLanguage: props.negotiatedLanguage,
     langPackInstallPhase: props.langPackInstallPhase,
     forceHideStepsIndicator: props.forceHideStepsIndicator,
     ariaRole: props.ariaRole,
     aboveButtonStepsIndicator: props.aboveButtonStepsIndicator,
     requireAction: props.requireAction,
-    isWideScreen: isWideScreen
+    isWideScreen: isWideScreen,
+    animationsPaused: props.animationsPaused,
+    toggleAnimationsPaused: props.toggleAnimationsPaused
   });
 };
 const ProtonScreenActionButtons = props => {
@@ -2858,8 +2942,7 @@ class ProtonScreen extends (external_React_default()).PureComponent {
       handleAction: this.props.handleAction,
       negotiatedLanguage: this.props.negotiatedLanguage,
       langPackInstallPhase: this.props.langPackInstallPhase,
-      messageId: this.props.messageId,
-      writeInMicrosurvey: this.props.writeInMicrosurvey
+      messageId: this.props.messageId
     }) : null;
   }
   renderDismissButton() {
@@ -2922,11 +3005,45 @@ class ProtonScreen extends (external_React_default()).PureComponent {
       totalNumberOfScreens: total
     }));
   }
+
+  // We consider a screen to have animated content when it includes both
+  // default and _static versions of its background image or hero_image url.
+  // The pause toggle swaps the rendered asset to the _static asset when activated.
+  // Without _both_ default and static, there is nothing for the toggle to
+  // switch to, so we don't render the toggle button at all.
+  hasAnimatedContent(content) {
+    return !!(content.background && content.background_static || content.hero_image?.url && content.hero_image?.static_url);
+  }
+  getEffectiveBackground(content) {
+    return this.props.animationsPaused && content.background_static ? content.background_static : content.background;
+  }
+  getEffectiveHeroImageUrl(content) {
+    if (!content.hero_image) {
+      return null;
+    }
+    return this.props.animationsPaused && content.hero_image.static_url ? content.hero_image.static_url : content.hero_image.url;
+  }
+  renderAnimationPlayPauseButton() {
+    const {
+      toggleAnimationsPaused
+    } = this.props;
+    const paused = !!this.props.animationsPaused;
+    const labelId = paused ? "onboarding-animation-play-button" : "onboarding-animation-pause-button";
+    return /*#__PURE__*/external_React_default().createElement("button", {
+      className: `animation-play-pause-button${paused ? " paused" : ""}`,
+      type: "button",
+      "aria-pressed": paused,
+      "data-l10n-id": labelId,
+      onClick: toggleAnimationsPaused
+    });
+  }
   renderSecondarySection(content) {
+    const background = this.getEffectiveBackground(content);
+    const heroImageUrl = this.getEffectiveHeroImageUrl(content);
     return /*#__PURE__*/external_React_default().createElement("div", {
       className: `section-secondary ${content.hide_secondary_section ? "with-secondary-section-hidden" : ""}`,
-      style: content.background ? {
-        background: content.background,
+      style: background ? {
+        background,
         "--mr-secondary-background-position-y": content.split_narrow_bkg_position
       } : {}
     }, content.dismiss_button && content.reverse_split ? this.renderDismissButton() : null, /*#__PURE__*/external_React_default().createElement(Localized, {
@@ -2935,8 +3052,8 @@ class ProtonScreen extends (external_React_default()).PureComponent {
       className: "sr-only image-alt",
       role: "img"
     })), content.hero_image ? /*#__PURE__*/external_React_default().createElement(HeroImage, {
-      url: content.hero_image.url
-    }) : this.renderHeroText(content.hero_text));
+      url: heroImageUrl
+    }) : this.renderHeroText(content.hero_text), this.hasAnimatedContent(content) ? this.renderAnimationPlayPauseButton() : null);
   }
   renderHeroText(hero_text) {
     if (!hero_text) {
@@ -3094,12 +3211,12 @@ class ProtonScreen extends (external_React_default()).PureComponent {
     }) : null, includeNoodles ? this.renderNoodles() : null, content.more_button ? this.renderMoreButton() : null, content.dismiss_button && !content.reverse_split ? this.renderDismissButton() : null, /*#__PURE__*/external_React_default().createElement("div", {
       className: `main-content ${hideStepsIndicator ? "no-steps" : ""}`,
       style: {
-        background: content.background && isCenterPosition ? content.background : null,
+        background: isCenterPosition && this.getEffectiveBackground(content) ? this.getEffectiveBackground(content) : null,
         width: content.width && content.position !== "split" ? content.width : null,
         paddingBlock: content.split_content_padding_block ? content.split_content_padding_block : null,
         paddingInline: content.split_content_padding_inline ? content.split_content_padding_inline : null
       }
-    }, content.logo && !content.fullscreen ? this.renderPicture(content.logo) : null, isRtamo && !content.fullscreen ? this.renderRTAMOIcon(addonType, this.props.themeScreenshots, this.props.addonIconURL) : null, /*#__PURE__*/external_React_default().createElement("div", {
+    }, isCenterPosition && this.hasAnimatedContent(content) ? this.renderAnimationPlayPauseButton() : null, content.logo && !content.fullscreen ? this.renderPicture(content.logo) : null, isRtamo && !content.fullscreen ? this.renderRTAMOIcon(addonType, this.props.themeScreenshots, this.props.addonIconURL) : null, /*#__PURE__*/external_React_default().createElement("div", {
       className: "main-content-inner",
       id: "mainContentInner",
       style: combinedStyles
@@ -3228,9 +3345,7 @@ const MultiStageAboutWelcome = props => {
       // blocking the thread.
       window.AWGetUnhandledCampaignAction?.().then(action => {
         if (typeof action === "string") {
-          MultiStageUtils.handleCampaignAction(action, props.message_id, {
-            writeInMicrosurvey: props.writeInMicrosurvey
-          });
+          MultiStageUtils.handleCampaignAction(action, props.message_id);
         }
       }).catch(error => {
         console.error("Failed to get unhandled campaign action:", error);
@@ -3247,8 +3362,7 @@ const MultiStageAboutWelcome = props => {
             screen_family: props.message_id,
             screen_index: order,
             screen_id: screen.id,
-            screen_initials: screenInitials,
-            writeInMicrosurvey: props.writeInMicrosurvey
+            screen_initials: screenInitials
           });
           window.AWAddScreenImpression?.(screen);
         }
@@ -3366,6 +3480,13 @@ const MultiStageAboutWelcome = props => {
   // structured like this: { screenId: { textareaId: { value, isValid } } }
   const [textInputs, setTextInputs] = (0,external_React_namespaceObject.useState)({});
 
+  // Whether animated backgrounds/illustrations are paused for this session.
+  // Defaults to paused when the user has prefers-reduced-motion: reduce set,
+  // so we never autoplay motion for those users. The toggle stays consistent
+  // among screens once the user interacts with it.
+  const [animationsPaused, setAnimationsPaused] = (0,external_React_namespaceObject.useState)(() => typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false);
+  const toggleAnimationsPaused = () => setAnimationsPaused(prev => !prev);
+
   // Get the active theme so the rendering code can make it selected
   // by default.
   const [activeTheme, setActiveTheme] = (0,external_React_namespaceObject.useState)(null);
@@ -3470,7 +3591,6 @@ const MultiStageAboutWelcome = props => {
       autoAdvance: currentScreen.auto_advance,
       advanceOnExperimentLoad: currentScreen.advance_on_experiment_load,
       messageId: `${props.message_id}_${order}_${currentScreen.id}`,
-      writeInMicrosurvey: props.writeInMicrosurvey,
       UTMTerm: props.utm_term,
       flowParams: flowParams,
       activeTheme: activeTheme,
@@ -3499,7 +3619,9 @@ const MultiStageAboutWelcome = props => {
       addonURL: props.addonURL,
       addonIconURL: props.addonIconURL,
       themeScreenshots: props.themeScreenshots,
-      isRtamo: currentScreen.content.isRtamo
+      isRtamo: currentScreen.content.isRtamo,
+      animationsPaused: animationsPaused,
+      toggleAnimationsPaused: toggleAnimationsPaused
     }) : null;
   })));
 };
@@ -3727,26 +3849,20 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
     source,
     props
   }) {
-    MultiStageUtils.sendActionTelemetry(props.messageId, source, event.name, {
-      writeInMicrosurvey: props.writeInMicrosurvey
-    });
+    MultiStageUtils.sendActionTelemetry(props.messageId, source, event.name);
 
     // Send additional telemetry if a messaging surface like feature callout is
     // dismissed via the dismiss button. Other causes of dismissal will be
     // handled separately by the messaging surface's own code.
     if (value === "dismiss_button" && !event.name) {
-      MultiStageUtils.sendDismissTelemetry(props.messageId, source, {
-        writeInMicrosurvey: props.writeInMicrosurvey
-      });
+      MultiStageUtils.sendDismissTelemetry(props.messageId, source);
     }
   }
   async handleMigrationIfNeeded(action, props) {
     const hasMigrate = a => a.type === "SHOW_MIGRATION_WIZARD" || a.type === "MULTI_ACTION" && a.data?.actions?.some(hasMigrate);
     if (hasMigrate(action)) {
       await window.AWWaitForMigrationClose();
-      MultiStageUtils.sendActionTelemetry(props.messageId, "migrate_close", "CLICK_BUTTON", {
-        writeInMicrosurvey: props.writeInMicrosurvey
-      });
+      MultiStageUtils.sendActionTelemetry(props.messageId, "migrate_close", "CLICK_BUTTON");
     }
   }
   applyThemeIfNeeded(action, event) {
@@ -3800,9 +3916,10 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
     const value = event.currentTarget.value ?? event.currentTarget.getAttribute("value");
     const source = event.source || value;
     let action = providedAction || this.resolveActionFromContent(value, event, props);
+    let actionResult;
     if (!action) {
       console.error("Failed to resolve action");
-      return;
+      return actionResult;
     }
 
     // Send telemetry before waiting on actions
@@ -3819,7 +3936,6 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
     if (action.collectTextInput && Object.values(props.textInputs).length) {
       this.setTextInputActions(action);
     }
-    let actionResult;
     if (["OPEN_URL", "SHOW_FIREFOX_ACCOUNTS"].includes(action.type)) {
       this.handleOpenURL(action, props.flowParams, props.UTMTerm);
     } else if (action.type === "INSTALL_ADDON_FROM_URL") {
@@ -3836,9 +3952,7 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
         actionResult = await actionPromise;
       }
       if (action.type === "FXA_SIGNIN_FLOW") {
-        MultiStageUtils.sendActionTelemetry(props.messageId, actionResult ? "sign_in" : "sign_in_cancel", "FXA_SIGNIN_FLOW", {
-          writeInMicrosurvey: props.writeInMicrosurvey
-        });
+        MultiStageUtils.sendActionTelemetry(props.messageId, actionResult ? "sign_in" : "sign_in_cancel", "FXA_SIGNIN_FLOW");
       }
       // Wait until migration closes to complete the action
       await this.handleMigrationIfNeeded(action, props);
@@ -3884,6 +3998,7 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
     if (shouldDoBehavior(action.dismiss)) {
       window.AWFinish();
     }
+    return actionResult;
   }
   setMultiSelectActions(action) {
     let {
@@ -3946,9 +4061,7 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
     action.data.actions.unshift(...multiSelectActions);
     for (const value of Object.values(props.activeMultiSelect)) {
       // Send telemetry with selected checkbox ids
-      MultiStageUtils.sendActionTelemetry(props.messageId, value.flat(), "SELECT_CHECKBOX", {
-        writeInMicrosurvey: props.writeInMicrosurvey
-      });
+      MultiStageUtils.sendActionTelemetry(props.messageId, value.flat(), "SELECT_CHECKBOX");
     }
   }
   setTextInputActions(action) {
@@ -3993,8 +4106,7 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
           collectedActions.push(tile.data.action);
         }
         MultiStageUtils.sendActionTelemetry(props.messageId, inputId, "TEXT_INPUT", {
-          value: truncateToByteSize(inputData.value, 8192),
-          writeInMicrosurvey: props.writeInMicrosurvey
+          value: truncateToByteSize(inputData.value, 8192)
         });
       }
     };
@@ -4031,7 +4143,6 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
       langPackInstallPhase: this.props.langPackInstallPhase,
       handleAction: this.handleAction,
       messageId: this.props.messageId,
-      writeInMicrosurvey: this.props.writeInMicrosurvey,
       isFirstScreen: this.props.isFirstScreen,
       isLastScreen: this.props.isLastScreen,
       isSingleScreen: this.props.isSingleScreen,
@@ -4049,7 +4160,9 @@ class WelcomeScreen extends (external_React_default()).PureComponent {
       addonURL: this.props.addonURL,
       addonIconURL: this.props.addonIconURL,
       themeScreenshots: this.props.themeScreenshots,
-      isRtamo: this.props.content.isRtamo
+      isRtamo: this.props.content.isRtamo,
+      animationsPaused: this.props.animationsPaused,
+      toggleAnimationsPaused: this.props.toggleAnimationsPaused
     });
   }
 }

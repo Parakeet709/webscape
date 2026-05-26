@@ -182,7 +182,7 @@ class JS_PUBLIC_API JSTracer {
   // which is freqently useful if, for example, we only want to process one type
   // of edge.
 #define DEFINE_ON_EDGE_METHOD(name, type, _1, _2) \
-  virtual void on##name##Edge(type** thingp, const char* name) = 0;
+  virtual bool on##name##Edge(type** thingp, const char* name) = 0;
   JS_FOR_EACH_TRACEKIND(DEFINE_ON_EDGE_METHOD)
 #undef DEFINE_ON_EDGE_METHOD
 
@@ -213,8 +213,8 @@ class GenericTracerImpl : public JSTracer {
   T* derived() { return static_cast<T*>(this); }
 
 #define DEFINE_ON_EDGE_METHOD(name, type, _1, _2)              \
-  void on##name##Edge(type** thingp, const char* name) final { \
-    derived()->onEdge(thingp, name);                           \
+  bool on##name##Edge(type** thingp, const char* name) final { \
+    return derived()->onEdge(thingp, name);                    \
   }
   JS_FOR_EACH_TRACEKIND(DEFINE_ON_EDGE_METHOD)
 #undef DEFINE_ON_EDGE_METHOD
@@ -241,8 +241,12 @@ class JS_PUBLIC_API CallbackTracer
 
  private:
   template <typename T>
-  void onEdge(T** thingp, const char* name) {
-    onChild(JS::GCCellPtr(*thingp), name);
+  bool onEdge(T** thingp, const char* name) {
+    T* thing = *thingp;
+    if (thing) {
+      onChild(JS::GCCellPtr(thing), name);
+    }
+    return true;
   }
   friend class js::GenericTracerImpl<CallbackTracer>;
 };
@@ -397,9 +401,6 @@ inline bool IsTracerKind(JSTracer* trc, JS::TracerKind kind) {
 
 // Trace an edge that is not a GC root and is not wrapped in a barriered
 // wrapper for some reason.
-//
-// This method does not check if |*edgep| is non-null before tracing through
-// it, so callers must check any nullable pointer before calling this method.
 extern JS_PUBLIC_API void UnsafeTraceManuallyBarrieredEdge(JSTracer* trc,
                                                            JSObject** thingp,
                                                            const char* name);

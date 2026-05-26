@@ -22,15 +22,16 @@
 
 #include <stdint.h>  // int32_t, int64_t, uint32_t
 
-#include "gc/Barrier.h"        // HeapPtr
-#include "gc/ZoneAllocator.h"  // ZoneAllocPolicy
-#include "js/AllocPolicy.h"    // SystemAllocPolicy
-#include "js/Class.h"          // JSClassOps, ClassSpec
-#include "js/GCHashTable.h"    // GCHashMap, GCHashSet
-#include "js/GCVector.h"       // GCVector
-#include "js/PropertySpec.h"   // JSPropertySpec, JSFunctionSpec
-#include "js/RootingAPI.h"     // StableCellHasher
-#include "js/SweepingAPI.h"    // JS::WeakCache
+#include "gc/Barrier.h"         // HeapPtr
+#include "gc/ZoneAllocator.h"   // ZoneAllocPolicy
+#include "js/AllocPolicy.h"     // SystemAllocPolicy
+#include "js/Class.h"           // JSClassOps, ClassSpec
+#include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
+#include "js/GCHashTable.h"     // GCHashMap, GCHashSet
+#include "js/GCVector.h"        // GCVector
+#include "js/PropertySpec.h"    // JSPropertySpec, JSFunctionSpec
+#include "js/RootingAPI.h"      // StableCellHasher
+#include "js/SweepingAPI.h"     // JS::WeakCache
 #include "js/TypeDecls.h"  // HandleValue, HandleObject, MutableHandleObject, MutableHandleFunction
 #include "js/Vector.h"  // JS::Vector
 #include "js/WasmFeatures.h"
@@ -99,6 +100,13 @@ struct ImportValues;
 
 bool IsSharedWasmMemoryObject(JSObject* obj);
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+[[nodiscard]] bool CompileForESM(JSContext* cx,
+                                 const JS::ReadOnlyCompileOptions& options,
+                                 const BytecodeSource& source,
+                                 MutableHandleObject moduleObj);
+#endif
+
 }  // namespace wasm
 
 // The class of WebAssembly.Module. Each WasmModuleObject owns a
@@ -127,6 +135,33 @@ class WasmModuleObject : public NativeObject {
                                   HandleObject proto);
   const wasm::Module& module() const;
 };
+
+#ifdef ENABLE_WASM_COMPONENTS
+// The class of WebAssembly.Component.
+// TODO(wasm-cm): Leave a more descriptive comment. See WasmModuleObject for
+// comparison.
+
+class WasmComponentObject : public NativeObject {
+  static const unsigned COMPONENT_SLOT = 0;
+  static const JSClassOps classOps_;
+  static const ClassSpec classSpec_;
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
+
+ public:
+  static const unsigned RESERVED_SLOTS = 1;
+  static const JSClass class_;
+  static const JSClass& protoClass_;
+  static const JSPropertySpec properties[];
+  static const JSFunctionSpec methods[];
+  static const JSFunctionSpec static_methods[];
+  static bool construct(JSContext*, unsigned, Value*);
+
+  static WasmComponentObject* create(JSContext* cx,
+                                     const wasm::Component& component,
+                                     HandleObject proto);
+  const wasm::Component& component() const;
+};
+#endif
 
 // The class of WebAssembly.Global.  This wraps a storage location, and there is
 // a per-agent one-to-one relationship between the WasmGlobalObject and the

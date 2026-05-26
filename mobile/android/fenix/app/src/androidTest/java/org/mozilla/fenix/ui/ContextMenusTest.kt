@@ -132,6 +132,7 @@ class ContextMenusTest {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4024997
     @Test
     fun verifyCopyLinkTextContextMenuOptionTest() {
         val pageLinks = mockWebServer.getGenericAsset(4)
@@ -254,7 +255,7 @@ class ContextMenusTest {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(composeTestRule, itemWithText("PDF form file"))
             waitForPageToLoad()
-            clickPageObject(composeTestRule, itemContainingText("Cancel"))
+            clickPageObject(composeTestRule, itemContainingText("Stay in"))
             longClickPageObject(composeTestRule, itemWithText("Wikipedia link"))
             verifyContextMenuForLinksToOtherHosts("wikipedia.org".toUri())
             dismissContentContextMenu()

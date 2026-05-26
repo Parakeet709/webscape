@@ -72,9 +72,9 @@ export default class LocationsList extends MozLitElement {
       <li role="presentation">
         <button
           class="location-item subviewbutton"
-          role="option"
+          role="radio"
           id="location-option-${aLocation.code}"
-          aria-selected=${isSelected ? "true" : "false"}
+          aria-checked=${isSelected ? "true" : "false"}
           @click=${() => this.handleSelectLocation(aLocation.code)}
           ?disabled=${!aLocation.available}
         >
@@ -97,7 +97,14 @@ export default class LocationsList extends MozLitElement {
                   >${countryName(aLocation.code)}</span
                 >`}
           </span>
-          <!--TODO: append an "unavailable" label if a location option is considered disabled-->
+          ${!aLocation.available
+            ? html`
+                <span
+                  class="location-unavailable-label"
+                  data-l10n-id="ipprotection-locations-unavailable-label"
+                ></span>
+              `
+            : null}
         </button>
       </li>
     `;
@@ -115,7 +122,11 @@ export default class LocationsList extends MozLitElement {
           id="locations-list-description"
           data-l10n-id="ipprotection-locations-subview-description"
         ></span>
-        <ul id="locations-list">
+        <ul
+          id="locations-list"
+          role="radiogroup"
+          aria-labelledby="locations-list-description"
+        >
           ${this.#locationRow(recommendedLocation)}
           ${this.#sortedLocations.map(aLocation =>
             this.#locationRow(aLocation)

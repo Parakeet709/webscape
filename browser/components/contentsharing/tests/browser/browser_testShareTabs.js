@@ -4,6 +4,9 @@
 "use strict";
 
 add_task(async function test_handleShareTabs() {
+  await Services.fog.testFlushAllChildren();
+  Services.fog.testResetFOG();
+
   await withContentSharingMockServer(async server => {
     let tabs = [
       BrowserTestUtils.addTab(gBrowser, "https://example.com"),
@@ -28,8 +31,12 @@ add_task(async function test_handleShareTabs() {
 
     await assertContentSharingModal(window, {
       share: body,
+      error: null,
+      warning: null,
       url: server.mockResponse.url,
+      isSchemaValid: true,
       isSignedIn: true,
+      loadingPromise: null,
     });
 
     Assert.equal(body.type, "tabs", "Share type is 'tabs'");
@@ -50,6 +57,21 @@ add_task(async function test_handleShareTabs() {
       "Second link URL matches tab 2"
     );
 
+    const gleanData = Glean.collectionShare.dialogOpen.testGetValue();
+    Assert.ok(true, "The glean data is: " + JSON.stringify(gleanData));
+    Assert.equal(gleanData.length, 1, "Recorded dialogOpen once");
+    Assert.equal(
+      gleanData[0].extra.signed_in,
+      "true",
+      "Test user should be signed in"
+    );
+    Assert.equal(
+      gleanData[0].extra.share_type,
+      "tabs",
+      "Share type should be tabs"
+    );
+
+    Services.fog.testResetFOG();
     gBrowser.removeTabs(tabs);
   });
 });

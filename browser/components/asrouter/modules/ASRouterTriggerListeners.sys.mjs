@@ -948,12 +948,21 @@ export const ASRouterTriggerListeners = new Map([
             return;
           }
           const { gBrowser } = event.target.documentGlobal;
+          // Programmatic tab closures (e.g., the 'close_current_tab'
+          // Smart Window NL toolcall in Bug 2037624) may set
+          // tab.smartWindowActionSource on the tab before removeTab()
+          // to attribute the close. Callouts can target this via the
+          // top-level 'actionSource' identifier in JEXL targeting.
+          const tab = event.target;
           this._closedTabs++;
           this._triggerHandler(gBrowser.selectedBrowser, {
             id: this.id,
             context: {
               tabsClosedCount: this._closedTabs,
               currentTabsOpen: gBrowser.tabs.length,
+              ...(tab.smartWindowActionSource && {
+                actionSource: tab.smartWindowActionSource,
+              }),
             },
           });
         }
@@ -1878,6 +1887,26 @@ export const ASRouterTriggerListeners = new Map([
           this._triggerHandler = null;
           this._elementIds = [];
         }
+      },
+    },
+  ],
+  [
+    "messagesLoaded",
+    {
+      /**
+       * This trigger does not actually listen for any events. It's triggered
+       * imperatively by ASRouter when messages are loaded. It is mainly
+       * intended to provide a baseline for reach experiments, since almost
+       * everyone will trigger it very quickly. We track its state here, because
+       * we don't want it to fire if there aren't any messages using it.
+       */
+      id: "messagesLoaded",
+      initialized: false,
+      init() {
+        this.initialized = true;
+      },
+      uninit() {
+        this.initialized = false;
       },
     },
   ],

@@ -11,7 +11,6 @@ import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { CSSTransition } from "react-transition-group";
 
 function WidgetsManagementPanel({
-  exitEventFired,
   onSubpanelToggle,
   togglePanel,
   showPanel,
@@ -29,13 +28,6 @@ function WidgetsManagementPanel({
   const arrowButtonRef = useRef(null);
   const panelRef = useRef(null);
   const dispatch = useDispatch();
-
-  // Close widget subpanel when parent menu is closed
-  useEffect(() => {
-    if (exitEventFired && showPanel) {
-      togglePanel();
-    }
-  }, [exitEventFired, showPanel, togglePanel]);
 
   // Notify parent menu when subpanel opens/closes
   useEffect(() => {
@@ -73,7 +65,7 @@ function WidgetsManagementPanel({
           widgetName = "focus_timer";
           break;
         case "WIDGET_SPORTS":
-          widgetName = "sports_widget";
+          widgetName = "sports";
           break;
         case "WIDGET_CLOCKS":
           widgetName = "clocks";
@@ -194,8 +186,7 @@ function WidgetsManagementPanel({
                     onToggle={onToggleWidget}
                     data-preference="widgets.sportsWidget.enabled"
                     data-event-source="WIDGET_SPORTS"
-                    //  TODO: add in widget title fluent string when product gets back to us*
-                    label="Sports"
+                    data-l10n-id="newtab-custom-widget-sports-toggle2"
                   />
                 </div>
               )}

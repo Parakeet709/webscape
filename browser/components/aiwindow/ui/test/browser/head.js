@@ -58,7 +58,7 @@ add_setup(async function () {
  * Opens a new AI Window
  *
  * @param {object} options
- * @param {string|boolean} options.waitForTabURL - URL to wait for or false to skip waiting
+ * @param {string} [options.waitForTabURL] - URL to wait for, or empty string to skip waiting
  * @returns {Promise<Window>}
  */
 async function openAIWindow({ waitForTabURL = AIWINDOW_URL } = {}) {
@@ -874,6 +874,10 @@ function readRequestBody(request) {
  */
 
 /**
+ *
+ * @deprecated - Please use MockEngineManager in AIWindowTestUtils.sys.mjs unless
+ * a test is explicitly needing to test the network layer of the OpenAI chat protocol.
+ *
  * Starts a local HTTP server that mimics the OpenAI chat completions API.
  *
  * Handles both streaming (SSE) and non-streaming (JSON) requests to

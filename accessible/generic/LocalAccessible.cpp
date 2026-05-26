@@ -49,6 +49,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/dom/HTMLHeadingElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/NodeList.h"
 #include "mozilla/dom/PopoverData.h"
@@ -1190,7 +1191,7 @@ already_AddRefed<AccAttributes> LocalAccessible::Attributes() {
 }
 
 already_AddRefed<AccAttributes> LocalAccessible::NativeAttributes() {
-  RefPtr<AccAttributes> attributes = new AccAttributes();
+  auto attributes = MakeRefPtr<AccAttributes>();
 
   // We support values, so expose the string value as well, via the valuetext
   // object attribute. We test for the value interface because we don't want
@@ -1381,8 +1382,8 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
     if (diffState) {
       for (uint64_t state = 1; state <= states::LAST_ENTRY; state <<= 1) {
         if (diffState & state) {
-          RefPtr<AccEvent> stateChangeEvent =
-              new AccStateChangeEvent(this, state, (currState & state));
+          auto stateChangeEvent =
+              MakeRefPtr<AccStateChangeEvent>(this, state, (currState & state));
           mDoc->FireDelayedEvent(stateChangeEvent);
         }
       }
@@ -1403,8 +1404,8 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
     // main summary.
     if (HTMLSummaryAccessible* summaryAccessible =
             HTMLSummaryAccessible::FromDetails(this)) {
-      RefPtr<AccEvent> expandedChangeEvent =
-          new AccStateChangeEvent(summaryAccessible, states::EXPANDED);
+      auto expandedChangeEvent =
+          MakeRefPtr<AccStateChangeEvent>(summaryAccessible, states::EXPANDED);
       mDoc->FireDelayedEvent(expandedChangeEvent);
       return;
     }
@@ -1420,8 +1421,7 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
         // For aria attributes like drag and drop changes we fire a generic
         // attribute change event; at least until native API comes up with a
         // more meaningful event.
-        RefPtr<AccEvent> event =
-            new AccObjectAttrChangedEvent(this, aAttribute);
+        auto event = MakeRefPtr<AccObjectAttrChangedEvent>(this, aAttribute);
         mDoc->FireDelayedEvent(event);
       }
     }
@@ -1430,8 +1430,8 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
   if (aAttribute == nsGkAtoms::aria_actions && IsAdditionOrRemoval(aModType)) {
     // We only care about the presence of aria-actions, not its value.
     mDoc->QueueCacheUpdate(this, CacheDomain::ARIA);
-    RefPtr<AccEvent> event =
-        new AccObjectAttrChangedEvent(this, nsGkAtoms::hasActions);
+    auto event =
+        MakeRefPtr<AccObjectAttrChangedEvent>(this, nsGkAtoms::hasActions);
     mDoc->FireDelayedEvent(event);
   }
 
@@ -1600,8 +1600,7 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                             : AccSelChangeEvent::eSelectionRemove;
       }
 
-      RefPtr<AccEvent> event =
-          new AccSelChangeEvent(widget, this, selChangeType);
+      auto event = MakeRefPtr<AccSelChangeEvent>(widget, this, selChangeType);
       mDoc->FireDelayedEvent(event);
       if (aAttribute == nsGkAtoms::aria_selected) {
         mDoc->QueueCacheUpdate(this, CacheDomain::State);
@@ -3087,7 +3086,7 @@ void LocalAccessible::RelocateChild(uint32_t aNewIndex,
 
   // Don't queue events while we're still building the initial tree.
   if (mDoc->HasLoadState(DocAccessible::eTreeConstructed)) {
-    RefPtr<AccHideEvent> hideEvent = new AccHideEvent(aChild, false);
+    auto hideEvent = MakeRefPtr<AccHideEvent>(aChild, false);
     if (mDoc->Controller()->QueueMutationEvent(hideEvent)) {
       aChild->SetHideEventTarget(true);
     }
@@ -3124,7 +3123,7 @@ void LocalAccessible::RelocateChild(uint32_t aNewIndex,
   }
 
   if (mDoc->HasLoadState(DocAccessible::eTreeConstructed)) {
-    RefPtr<AccShowEvent> showEvent = new AccShowEvent(aChild);
+    auto showEvent = MakeRefPtr<AccShowEvent>(aChild);
     DebugOnly<bool> added = mDoc->Controller()->QueueMutationEvent(showEvent);
     MOZ_ASSERT(added);
     aChild->SetShowEventTarget(true);
@@ -3375,8 +3374,7 @@ void LocalAccessible::Announce(const nsAString& aAnnouncement,
   if (!bc || !bc->IsActive()) {
     return;
   }
-  RefPtr<AccAnnouncementEvent> event =
-      new AccAnnouncementEvent(this, aAnnouncement, aPriority);
+  auto event = MakeRefPtr<AccAnnouncementEvent>(this, aAnnouncement, aPriority);
   nsEventShell::FireEvent(event);
 }
 
@@ -3512,8 +3510,7 @@ void LocalAccessible::SendCache(uint64_t aCacheDomain,
   }
 
   // Only send cache updates for domains that are active.
-  const uint64_t domainsToSend =
-      nsAccessibilityService::GetActiveCacheDomains() & aCacheDomain;
+  const uint64_t domainsToSend = mDoc->EffectiveCacheDomains() & aCacheDomain;
 
   // Avoid sending cache updates if we have no domains to update.
   if (domainsToSend == CacheDomain::None) {
@@ -3561,7 +3558,7 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
     uint64_t aInitialDomains) {
   MOZ_ASSERT((~aCacheDomain & aInitialDomains) == CacheDomain::None,
              "Initial domain pushes without domains requested!");
-  RefPtr<AccAttributes> fields = new AccAttributes();
+  auto fields = MakeRefPtr<AccAttributes>();
 
   if (aUpdateType == CacheUpdateType::Initial) {
     aInitialDomains = CacheDomain::All;
@@ -4155,6 +4152,13 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
         fields->SetAttribute(attr, DeleteEntry());
       }
     }
+
+    int32_t headingLevel = HeadingLevel();
+    if (headingLevel > 0) {
+      fields->SetAttribute(CacheKey::HeadingLevel, headingLevel);
+    } else if (IsUpdatePush(CacheDomain::GroupInfo)) {
+      fields->SetAttribute(CacheKey::HeadingLevel, DeleteEntry());
+    }
   }
 
   if (aCacheDomain & CacheDomain::Actions) {
@@ -4273,7 +4277,7 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
     aria::AttrIterator attrIt(mContent);
     while (attrIt.Next()) {
       if (!ariaAttrs) {
-        ariaAttrs = new AccAttributes();
+        ariaAttrs = MakeRefPtr<AccAttributes>();
       }
       attrIt.ExposeAttr(ariaAttrs);
     }
@@ -4704,6 +4708,13 @@ void LocalAccessible::DOMNodeClass(nsString& aClass) const {
   if (auto* el = dom::Element::FromNodeOrNull(mContent)) {
     el->GetClassName(aClass);
   }
+}
+
+int32_t LocalAccessible::HeadingLevel() const {
+  if (auto* el = dom::HTMLHeadingElement::FromNodeOrNull(mContent)) {
+    return static_cast<int32_t>(el->ComputedLevel());
+  }
+  return 0;
 }
 
 void LocalAccessible::LiveRegionAttributes(nsAString* aLive,

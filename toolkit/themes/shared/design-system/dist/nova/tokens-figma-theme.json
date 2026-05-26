@@ -372,7 +372,7 @@
   "link/color/visited": {
     "light": "{Theme$link/color}",
     "dark": "{Theme$link/color}",
-    "forcedColors": "{Theme$link/color}"
+    "forcedColors": "{HCM Theme$VisitedText}"
   },
   "panel/background/color": {
     "light": "{Theme$background/color/box}",
@@ -503,6 +503,11 @@
     "light": "rgba(21, 20, 26, 0.4)",
     "dark": "rgba(251, 251, 254, 0.4)",
     "forcedColors": "{HCM Theme$CanvasText}"
+  },
+  "tab/border/color/selected/trailing": {
+    "light": "{Colors$color/orange/30}",
+    "dark": "{Colors$color/violet/50}",
+    "forcedColors": "transparent"
   },
   "tab/background/color/hover": {
     "light": "color-mix(in lch, var(--color-violet-desaturated-50) 25%, transparent)",

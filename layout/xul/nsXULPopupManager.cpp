@@ -907,8 +907,7 @@ bool nsXULPopupManager::ShowPopupAtAnchorAsNativeMenu(
       },
       [&](NativeMenu* menu, nsMenuPopupFrame* popupFrame,
           nsIFrame* clickedFrame) {
-        menu->ShowMenuAnchored(clickedFrame, popupFrame->GetScreenAnchorRect(),
-                               popupFrame->GetAlignmentPosition());
+        menu->ShowMenuAnchored(clickedFrame, popupFrame);
       });
 }
 
@@ -1104,8 +1103,7 @@ bool nsXULPopupManager::ShowPopupAtScreenRectAsNativeMenu(
       },
       [&](NativeMenu* menu, nsMenuPopupFrame* popupFrame,
           nsIFrame* clickedFrame) {
-        menu->ShowMenuAnchored(clickedFrame, popupFrame->GetScreenAnchorRect(),
-                               popupFrame->GetAlignmentPosition());
+        menu->ShowMenuAnchored(clickedFrame, popupFrame);
       });
 }
 
@@ -1163,7 +1161,7 @@ static void CheckCaretDrawingState() {
       return;
     }
 
-    RefPtr<nsCaret> caret = presShell->GetCaret();
+    RefPtr<nsCaret> caret = presShell->GetActiveCaret();
     if (!caret) {
       return;
     }

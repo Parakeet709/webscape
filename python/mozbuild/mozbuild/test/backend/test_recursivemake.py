@@ -731,6 +731,58 @@ class TestRecursiveMakeBackend(BackendTester):
 
         self.assertTrue(os.path.isfile(mozpath.join(p, "Makefile")))
 
+    def test_webidl_build_writes_cppsrcs(self):
+        """Ensure _handle_webidl_build writes the unified variable into
+        webidlsrcs.mk and CPPSRCS lines into dom/bindings/backend.mk, so that
+        dom/bindings/Makefile.in no longer needs to declare them."""
+        env = self._get_environment("stub0")
+        backend = RecursiveMakeBackend(env)
+
+        bindings_dir = mozpath.join(env.topobjdir, "dom", "bindings")
+        os.makedirs(bindings_dir, exist_ok=True)
+
+        class FakeWebIDLCollection:
+            srcdir = mozpath.join(env.topsrcdir, "dom", "bindings")
+            objdir = bindings_dir
+            topsrcdir = env.topsrcdir
+            config = env
+
+            def all_non_static_basenames(self):
+                return ["GeneratedFooBinding.cpp"]
+
+            def all_test_stems(self):
+                return ["TestFoo"]
+
+            def all_preprocessed_sources(self):
+                return []
+
+        unified_source_mapping = [
+            ("UnifiedBindings0.cpp", ["FooBinding.cpp", "BarBinding.cpp"]),
+        ]
+        global_define_files = ["RegisterBindings.cpp"]
+
+        backend._handle_webidl_build(
+            bindings_dir,
+            unified_source_mapping,
+            FakeWebIDLCollection(),
+            expected_build_output_files=[],
+            global_define_files=global_define_files,
+        )
+
+        with open(mozpath.join(bindings_dir, "webidlsrcs.mk")) as fh:
+            webidlsrcs_contents = fh.read()
+        self.assertIn(
+            "unified_binding_cpp_files := UnifiedBindings0.cpp",
+            webidlsrcs_contents,
+        )
+        self.assertNotIn("CPPSRCS", webidlsrcs_contents)
+        self.assertNotIn("globalgen_sources", webidlsrcs_contents)
+
+        backend_file = backend._backend_files[bindings_dir]
+        backend_mk_contents = backend_file.fh.getvalue().decode("utf-8")
+        self.assertIn("CPPSRCS += RegisterBindings.cpp", backend_mk_contents)
+        self.assertIn("CPPSRCS += $(unified_binding_cpp_files)", backend_mk_contents)
+
     def test_test_support_files_tracked(self):
         env = self._consume("test-support-binaries-tracked", RecursiveMakeBackend)
         m = InstallManifest(
@@ -1082,6 +1134,29 @@ class TestRecursiveMakeBackend(BackendTester):
         self.assertTrue(
             any(l == "recurse_compile: code/host code/target" for l in lines)
         )
+
+    def test_host_rust_program_output_category(self):
+        """Test that a host Rust program with output_category is written correctly."""
+        env = self._consume("host-rust-program-output-category", RecursiveMakeBackend)
+
+        backend_path = mozpath.join(env.topobjdir, "backend.mk")
+        lines = [
+            l.strip()
+            for l in open(backend_path).readlines()[2:]
+            if not l.startswith("COMPUTED_")
+        ]
+
+        expected = [
+            f"CARGO_FILE := {env.topsrcdir}/Cargo.toml",
+            f"CARGO_TARGET_DIR := {env.topobjdir}",
+            "HOST_RUST_PROGRAMS += $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-output-category.exe",
+            "HOST_RUST_CARGO_PROGRAMS += test-host-program-output-category",
+            "test-category:: $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-output-category.exe",
+            "MOZBUILD_NON_DEFAULT_TARGETS += $(DEPTH)/i686-pc-windows-msvc/release/test-host-program-output-category.exe",
+            "HOST_RUST_PROGRAM_OUTPUT_CATEGORY := test-category",
+        ]
+
+        self.assertEqual(lines, expected)
 
     def test_final_target(self):
         """Test that FINAL_TARGET is written to backend.mk correctly."""

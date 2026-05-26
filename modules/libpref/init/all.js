@@ -3936,7 +3936,6 @@ pref("devtools.debugger.features.windowless-service-workers", true);
 
 // Disable remote debugging protocol logging.
 pref("devtools.debugger.log", false);
-pref("devtools.debugger.log.verbose", false);
 
 pref("devtools.debugger.remote-port", 6000);
 pref("devtools.debugger.remote-websocket", false);
@@ -3987,7 +3986,12 @@ pref("dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled", false
 // Note: "extensions.formautofill.available"
 // is not being used in form autofill, but need to exist for migration purposes.
 pref("extensions.formautofill.available", "detect");
+
+#if defined(NIGHTLY_BUILD) && !defined(ANDROID)
+pref("extensions.formautofill.addresses.supported", "on");
+#else
 pref("extensions.formautofill.addresses.supported", "detect");
+#endif
 pref("extensions.formautofill.addresses.enabled", true);
 pref("extensions.formautofill.addresses.capture.enabled", true);
 #if defined(ANDROID)

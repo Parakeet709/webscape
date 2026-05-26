@@ -122,6 +122,7 @@ struct FocusOptions;
 struct ShadowRootInit;
 struct ScrollOptions;
 struct FullscreenOptions;
+struct PointerLockOptions;
 class Attr;
 class BooleanOrScrollIntoViewOptions;
 class ContentList;
@@ -449,7 +450,7 @@ class Element : public FragmentOrElement {
   /**
    * Get the inline style declaration, if any, for this element.
    */
-  DeclarationBlock* GetInlineStyleDeclaration() const;
+  StyleLockedDeclarationBlock* GetInlineStyleDeclaration() const;
 
   /**
    * Get the mapped attributes, if any, for this element.
@@ -474,21 +475,21 @@ class Element : public FragmentOrElement {
   /**
    * Set the inline style declaration for this element.
    */
-  virtual nsresult SetInlineStyleDeclaration(DeclarationBlock& aDeclaration,
+  virtual nsresult SetInlineStyleDeclaration(StyleLockedDeclarationBlock&,
                                              MutationClosureData& aData);
 
   /**
    * Get the SMIL override style declaration for this element. If the
    * rule hasn't been created, this method simply returns null.
    */
-  DeclarationBlock* GetSMILOverrideStyleDeclaration();
+  StyleLockedDeclarationBlock* GetSMILOverrideStyleDeclaration();
 
   /**
    * Set the SMIL override style declaration for this element. This method will
    * notify the document's pres context, so that the style changes will be
    * noticed.
    */
-  void SetSMILOverrideStyleDeclaration(DeclarationBlock&);
+  void SetSMILOverrideStyleDeclaration(StyleLockedDeclarationBlock&);
 
   /**
    * Returns a new SMILAttr that allows the caller to animate the given
@@ -634,11 +635,8 @@ class Element : public FragmentOrElement {
   void SetAssociatedPopover(nsGenericHTMLElement& aPopover);
   nsGenericHTMLElement* GetAssociatedPopover() const;
 
-  /**
-   * https://html.spec.whatwg.org/multipage/popover.html#topmost-popover-ancestor
-   */
-  Element* GetTopmostPopoverAncestor(PopoverAttributeState aMode,
-                                     const Element* aInvoker,
+  // https://html.spec.whatwg.org/multipage/popover.html#topmost-popover-ancestor
+  Element* GetTopmostPopoverAncestor(const Element* aInvoker,
                                      bool isPopover) const;
 
   ElementAnimationData* GetAnimationData() const {
@@ -1585,7 +1583,9 @@ class Element : public FragmentOrElement {
 
   already_AddRefed<Promise> RequestFullscreen(const FullscreenOptions&,
                                               CallerType, ErrorResult&);
-  void RequestPointerLock(CallerType aCallerType);
+  already_AddRefed<Promise> RequestPointerLock(
+      const PointerLockOptions& aOptions, CallerType aCallerType,
+      ErrorResult& aRv);
   Attr* GetAttributeNode(const nsAString& aName);
   MOZ_CAN_RUN_SCRIPT already_AddRefed<Attr> SetAttributeNode(
       Attr& aNewAttr, nsIPrincipal* aSubjectPrincipal, ErrorResult& aError);
@@ -2532,13 +2532,11 @@ class Element : public FragmentOrElement {
 #endif
 
  protected:
-  enum class ReparseAttributes { No, Yes };
   /**
    * Copy attributes and state to another element
    * @param aDest the object to copy to
    */
-  nsresult CopyInnerTo(Element* aDest,
-                       ReparseAttributes = ReparseAttributes::Yes);
+  nsresult CopyInnerTo(Element* aDest);
 
   /**
    * Some event handler content attributes have a different name (e.g. different

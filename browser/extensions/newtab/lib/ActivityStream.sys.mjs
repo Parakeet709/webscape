@@ -335,6 +335,13 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "hideLogo",
+    {
+      title: "Hide the Firefox logo on new tab",
+      value: false,
+    },
+  ],
+  [
     "showSponsored",
     {
       title: "User pref for sponsored Pocket content",
@@ -538,6 +545,20 @@ export const PREFS_CONFIG = new Map([
         "Temporary measure for trainhopping. This adds the Merino endpoint for the hourly forecasts to display in Weather Forecast widget",
       value:
         "https://merino.services.mozilla.com/api/v1/weather/hourly-forecasts",
+    },
+  ],
+  [
+    "sports.worldCup.teamsEndpoint",
+    {
+      title: "The Merino endpoint for fetching available World Cup teams data",
+      value: "https://merino.services.mozilla.com/api/v1/wcs/teams",
+    },
+  ],
+  [
+    "sports.worldCup.matchesEndpoint",
+    {
+      title: "The Merino endpoint for fetching World Cup match data",
+      value: "https://merino.services.mozilla.com/api/v1/wcs/matches",
     },
   ],
   [
@@ -1710,6 +1731,19 @@ export const PREFS_CONFIG = new Map([
       title:
         "Set to true to enable the RemoteSettings backed renderer for newtab. See RemoteRenderer.sys.mjs for more details.",
       value: false,
+    },
+  ],
+  /**
+   * @backward-compat { version 153 }
+   * Remove this pref entry after Firefox 153 hits Release — it's only
+   * needed while the 2026 World Cup logo variation is live.
+   */
+  [
+    "logo.variation",
+    {
+      title:
+        "Variant ID of a logo variation to render in place of the standard newtab logo (e.g. 'spin-ball-small'). Empty string disables. Overridden by trainhopConfig.logo.variation when set.",
+      value: "",
     },
   ],
 ]);

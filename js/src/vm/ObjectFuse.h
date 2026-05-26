@@ -225,7 +225,6 @@ class ObjectFuse {
   void handleTeleportingShadowedProperty(JSContext* cx, PropertyInfo prop);
   void handleTeleportingProtoMutation(JSContext* cx);
   void handleShadowedGlobalProperty(JSContext* cx, PropertyInfo prop);
-  void handleObjectSwap(JSContext* cx);
 
   bool addDependency(uint32_t propSlot, const jit::IonScriptKey& ionScript);
 
@@ -249,7 +248,6 @@ class ObjectFuse {
   // We should sweep ObjectFuseMap entries based on the key (the object) but
   // never based on the ObjectFuse. We do need to trace weak pointers in the
   // DependentIonScriptSets.
-  bool needsSweep(JSTracer* trc) const { return false; }
   bool traceWeak(JSTracer* trc) {
     dependencies_.traceWeak(trc);
     return true;

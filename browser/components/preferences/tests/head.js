@@ -300,6 +300,11 @@ async function waitForAndAssertPrefState(pref, expectedValue, message) {
  * @param {string} value - The history mode to select.
  */
 async function selectHistoryMode(win, value) {
+  if (Services.prefs.getBoolPref("browser.settings-redesign.enabled", false)) {
+    await selectRedesignedHistoryMode(win, value);
+    return;
+  }
+
   let historyMode = win.document.getElementById("historyMode").inputEl;
 
   // Find the index of the option with the given value. Do this before the first
@@ -461,6 +466,27 @@ async function waitForPaneChange(
     ? paneId
     : `pane${paneId[0].toUpperCase()}${paneId.substring(1)}`;
   is(event.detail.category, expectId, "Loaded the correct pane");
+}
+
+/**
+ * Navigate an already-open preferences window to the named pane via
+ * `location.hash`. No-op if the pane is already the current pane (e.g.
+ * legacy chrome already on paneGeneral).
+ *
+ * @param {string} paneName - Unprefixed pane name (e.g. "tabsBrowsing")
+ * @param {Window} [win] - Window to navigate (defaults to selected tab)
+ */
+async function maybeNavigateToPane(
+  paneName,
+  win = gBrowser.selectedBrowser.contentWindow
+) {
+  const expectId = `pane${paneName[0].toUpperCase()}${paneName.substring(1)}`;
+  if (win.history.state === expectId) {
+    return;
+  }
+  const paneShown = waitForPaneChange(paneName, win);
+  win.location.hash = `#${paneName}`;
+  await paneShown;
 }
 
 /**

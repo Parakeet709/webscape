@@ -74,6 +74,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   }
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "semanticHistorySmartwindowFeatureGate",
+  "places.semanticHistory.smartwindow.featureGate",
+  false
+);
+
 // Time between deferred task executions.
 const DEFERRED_TASK_INTERVAL_MS = 3000;
 // Maximum time to wait for an idle before the task is executed anyway.
@@ -217,7 +224,8 @@ class PlacesSemanticHistoryManager {
         "places.semanticHistory.initialized"
       );
 
-      let isAvailable = this.canUseSemanticSearch;
+      let isAvailable =
+        this.canUseSemanticSearch || this.isEnabledForSmartWindow;
       let removeFiles =
         (wasInitialized && !isAvailable) ||
         Services.prefs.getBoolPref(
@@ -254,7 +262,7 @@ class PlacesSemanticHistoryManager {
 
     await this.#promiseInitialized;
 
-    if (!this.canUseSemanticSearch) {
+    if (!this.canUseSemanticSearch && !this.isEnabledForSmartWindow) {
       return null;
     }
 
@@ -354,6 +362,24 @@ class PlacesSemanticHistoryManager {
       this.qualifiedForSemanticSearch &&
       Services.prefs.getBoolPref("browser.ml.enable", true) &&
       Services.prefs.getBoolPref("places.semanticHistory.featureGate", false) &&
+      this.#isSupportedLocale(Services.locale.appLocaleAsBCP47)
+    );
+  }
+
+  /**
+   * Per-window-type enablement check for Smart Window. This is a UI-surface
+   * decision (should the SW search consumer query semantic history?), distinct
+   * from `canUseSemanticSearch` which gates the Classic Window surface. The
+   * underlying singleton DB initializes if either gate is on, so toggling SW
+   * does not affect CW behavior and vice versa.
+   *
+   * @returns {boolean}
+   */
+  get isEnabledForSmartWindow() {
+    return (
+      this.qualifiedForSemanticSearch &&
+      Services.prefs.getBoolPref("browser.ml.enable", true) &&
+      lazy.semanticHistorySmartwindowFeatureGate &&
       this.#isSupportedLocale(Services.locale.appLocaleAsBCP47)
     );
   }
@@ -717,46 +743,16 @@ class PlacesSemanticHistoryManager {
             lazy.logger.error(`Unable to get inserted rowid for: ${url_hash}`);
             continue;
           }
-
-          // UPSERT or INSERT OR REPLACE are not yet supported by the sqlite-vec
-          // extension, so we must manage the conflict manually.
-          // See https://github.com/asg017/sqlite-vec/issues/127.
-          try {
-            await conn.executeCached(
-              `
-              INSERT INTO vec_history (rowid, embedding, embedding_coarse)
-              VALUES (:rowid, :vector, vec_quantize_binary(:vector))
-              `,
-              {
-                rowid,
-                vector: lazy.PlacesUtils.tensorToSQLBindable(tensor),
-              }
-            );
-          } catch (error) {
-            lazy.logger.trace(
-              `Error while inserting new vector, possible conflict. Error (${error.result}): ${error.message}`
-            );
-            // Ideally we'd check for `error.result == Cr.NS_ERROR_STORAGE_CONSTRAINT`,
-            // unfortunately sqlite-vec doesn't generate a SQLITE_CONSTRAINT
-            // error in this case, so we get a generic NS_ERROR_FAILURE.
-            await conn.executeCached(
-              `
-              DELETE FROM vec_history WHERE rowid = :rowid
-              `,
-              { rowid }
-            );
-            await conn.executeCached(
-              `
-              INSERT INTO vec_history (rowid, embedding, embedding_coarse)
-              VALUES (:rowid, :vector, vec_quantize_binary(:vector))
-              `,
-              {
-                rowid,
-                vector: lazy.PlacesUtils.tensorToSQLBindable(tensor),
-              }
-            );
-          }
-
+          await conn.executeCached(
+            `
+            INSERT OR REPLACE INTO vec_history (rowid, embedding, embedding_coarse)
+            VALUES (:rowid, :vector, vec_quantize_binary(:vector))
+            `,
+            {
+              rowid,
+              vector: lazy.PlacesUtils.tensorToSQLBindable(tensor),
+            }
+          );
           lazy.logger.info(
             `Added embedding and mapping for url_hash: ${url_hash}`
           );

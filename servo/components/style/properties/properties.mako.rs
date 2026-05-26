@@ -24,10 +24,11 @@ use crate::device::Device;
 use crate::parser::ParserContext;
 use crate::selector_parser::PseudoElement;
 use crate::stylist::Stylist;
-use style_traits::{CssStringWriter, CssWriter, KeywordsCollectFn, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss, TypedValueList, ToTyped};
+use style_traits::{CssStringWriter, CssWriter, KeywordsCollectFn, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss};
 use crate::derives::*;
 use crate::stylesheets::{CssRuleType, CssRuleTypes, Origin};
 use crate::logical_geometry::{LogicalAxis, LogicalCorner, LogicalSide};
+use crate::typed_om::{ToTyped, TypedValueList};
 use crate::use_counters::UseCounters;
 use crate::rule_tree::StrongRuleNode;
 use crate::values::{
@@ -1930,7 +1931,7 @@ impl ComputedValues {
             PropertyDeclarationId::Longhand(id) => {
                 let mut context = resolved::Context {
                     style: self,
-                    for_property: id.into(),
+                    for_property: PropertyId::NonCustom(id.into()),
                     current_longhand: Some(id),
                 };
                 let mut s = String::new();
@@ -2980,7 +2981,13 @@ impl Descriptors {
         match id {
         % for descriptor in descriptors:
             DescriptorId::${descriptor.camel_case} => {
-                let value = Some(input.parse_entirely(|i| Parse::parse(context, i))?);
+                let value = Some(input.parse_entirely(|i|
+                    % if descriptor.parser:
+                        ${descriptor.type}::${descriptor.parser}(context, i)
+                    % else:
+                        Parse::parse(context, i)
+                    % endif
+                )?);
                 let change = self.${descriptor.ident} != value;
                 self.${descriptor.ident} = value;
                 Ok(change)

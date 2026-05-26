@@ -774,6 +774,7 @@
   result_type: Object
   guard: true
   congruent_to: if_operands_equal
+  # The handler slot is cleared when the proxy is revoked.
   alias_set:
     load: ObjectFields
   generate_lir: true
@@ -2587,8 +2588,8 @@
   guard: true
   movable: true
   congruent_to: if_operands_equal
-  alias_set:
-    load: ObjectFields
+  # A native object can never become a non-native object and vice versa.
+  alias_set: none
   generate_lir: true
   lir_result_type: none
   lir_temps: 1
@@ -2613,8 +2614,8 @@
   guard: true
   movable: true
   congruent_to: if_operands_equal
-  alias_set:
-    load: ObjectFields
+  # A proxy object can never become a non-proxy object and vice versa.
+  alias_set: none
   generate_lir: true
   lir_result_type: none
   lir_temps: 1
@@ -2640,8 +2641,8 @@
   movable: true
   congruent_to: if_operands_equal
   folds_to: custom
-  alias_set:
-    load: ObjectFields
+  # A proxy object can never become a non-proxy object and vice versa.
+  alias_set: none
   generate_lir: true
   lir_result_type: none
   lir_temps: 1
@@ -2896,6 +2897,8 @@
   guard: true
   movable: true
   congruent_to: if_operands_and_arguments_equal
+  # The proxy handler can change when a proxy is swapped with another object or
+  # when nuking a cross-compartment wrapper.
   alias_set:
     load: ObjectFields
   generate_lir: true

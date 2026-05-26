@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* global Sanitizer */
-
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import {
@@ -41,7 +39,7 @@ export class AIChatMessage extends MozLitElement {
     role: { type: String }, // "user" | "assistant"
     message: { type: String },
     messageId: { type: String, reflect: true, attribute: "data-message-id" },
-    complete: { type: Boolean },
+    complete: { type: Boolean, reflect: true },
     seenUrls: { type: Object, attribute: false },
     conversationId: { type: String },
   };

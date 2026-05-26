@@ -48,7 +48,8 @@
     outline-offset: var(--focus-outline-inset);
   }
 
-  &[aria-selected="true"] {
+  &[aria-checked="true"] {
+    background-color: var(--button-background-color-selected);
     .location-check {
       visibility: visible;
     }
@@ -59,9 +60,18 @@
 
   &[disabled] {
     .location-label,
-    .location-description {
+    .location-description,
+    .location-unavailable-label {
       color: var(--text-color-deemphasized);
     }
+  }
+
+  @media (prefers-contrast) {
+    border: var(--button-border);
+  }
+
+  @media (forced-colors) {
+    border: var(--button-border);
   }
 }
 
@@ -82,7 +92,6 @@
 
 .location-description {
   font-size: var(--font-size-small);
-  color: var(--text-color-deemphasized);
 }
 
 #locations-subview-promo {

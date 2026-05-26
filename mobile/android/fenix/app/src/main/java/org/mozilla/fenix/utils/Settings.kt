@@ -215,12 +215,6 @@ class Settings(
         persistDefaultIfNotExists = true,
     )
 
-    val toolbarSimpleShortcut: String
-        get() = when (shouldShowToolbarCustomization) {
-            true -> toolbarSimpleShortcutKey
-            false -> ShortcutType.NEW_TAB.value
-        }
-
     /**
      * Indicates what expanded toolbar shortcut key is currently selected.
      */
@@ -229,12 +223,6 @@ class Settings(
         default = { ShortcutType.BOOKMARK.value },
         persistDefaultIfNotExists = true,
     )
-
-    val toolbarExpandedShortcut: String
-        get() = when (shouldShowToolbarCustomization) {
-            true -> toolbarExpandedShortcutKey
-            false -> ShortcutType.BOOKMARK.value
-        }
 
     /**
      * Indicates if the Pocket recommendations homescreen section should also show sponsored stories.
@@ -290,16 +278,6 @@ class Settings(
 
     private val homescreenSections: Map<HomeScreenSection, Boolean>
         get() = FxNimbus.features.homescreen.value().sectionsEnabled
-
-    /**
-     * Indicates if the privacy report homepage section settings should be visible.
-     * Controlled by secret settings toggle.
-     */
-    val showPrivacyReportSectionToggle: Boolean
-        get() = preferences.getBoolean(
-            appContext.getPreferenceKey(R.string.pref_key_enable_privacy_report),
-            false,
-        )
 
     /**
      * Indicates if the recent tabs homepage section settings should be visible
@@ -465,6 +443,16 @@ class Settings(
         default = "",
     )
 
+    var rtamoAddonImageUrl by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_image_url),
+        default = "",
+    )
+
+    var rtamoAddonName by stringPreference(
+        appContext.getPreferenceKey(R.string.pref_key_rtamo_addon_name),
+        default = "",
+    )
+
     var contileContextId by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_contile_context_id),
         default = { TopSites.contextId.generateAndSet().toString() },
@@ -570,7 +558,7 @@ class Settings(
 
     var shouldShowMenuBanner by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_show_menu_banner),
-        default = { FxNimbus.features.menuRedesign.value().menuBanner },
+        default = true,
     )
 
     var defaultSearchEngineName by stringPreference(
@@ -586,11 +574,6 @@ class Settings(
     var installPwaOpened by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_install_pwa_opened),
         default = false,
-    )
-
-    var showCollectionsPlaceholderOnHome by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_show_collections_placeholder_home),
-        default = true,
     )
 
     val isCrashReportingEnabled: Boolean
@@ -1111,6 +1094,15 @@ class Settings(
             appContext.getString(R.string.remote_settings_server_dev) -> {
                 appContext.getString(R.string.preferences_remote_settings_server_dev_label)
             }
+            appContext.getString(R.string.remote_settings_server_prod_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_prod_label_v2)
+            }
+            appContext.getString(R.string.remote_settings_server_stage_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_stage_label_v2)
+            }
+            appContext.getString(R.string.remote_settings_server_dev_v2) -> {
+                appContext.getString(R.string.preferences_remote_settings_server_dev_label_v2)
+            }
             else -> {
                 appContext.getString(R.string.preferences_remote_settings_server_prod_label)
             }
@@ -1146,8 +1138,8 @@ class Settings(
         default = true,
     )
 
-    var shouldUseTrackingProtectionDatabase by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_tracking_protection_database_status),
+    var shouldShowTrackingProtectionDashboard by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_tracking_protection_dashboard_status),
         default = false,
     )
 
@@ -1449,72 +1441,25 @@ class Settings(
             /**
              * Converts an integer value into its corresponding [DeleteDownloadBehavior] enum constant.
              *
-             * If the integer does not match any known value, it defaults to [DELETE_FROM_DEVICE].
+             * If the integer does not match any known value, it defaults to [ASK_WHEN_DELETING].
              *
              * @param value The integer to convert.
              * @return The matching [DeleteDownloadBehavior] or the default.
              */
-            fun fromInt(value: Int) = entries.firstOrNull { it.value == value } ?: DELETE_FROM_DEVICE
-        }
-    }
-
-    /**
-     * Migrates legacy download deletion preferences to the new unified [DeleteDownloadBehavior] setting.
-     *
-     * Previously, the user's preference for handling deleted downloads was stored across multiple
-     * separate boolean keys (including a legacy "clean up files automatically" toggle). This
-     * function reads those old boolean values, maps them to the appropriate [DeleteDownloadBehavior]
-     * enum value, saves the new integer preference, and removes the legacy keys from
-     * [SharedPreferences].
-     *
-     * This migration ensures existing users do not lose their settings after updating the app.
-     * It will safely return early if the migration has already been performed.
-     */
-    fun migrateDeleteDownloadBehaviorIfNeeded() {
-        val newKey = appContext.getString(R.string.pref_key_downloads_delete_behavior)
-        if (preferences.contains(newKey)) return
-
-        val legacyCleanupKey = appContext.getString(
-            R.string.pref_key_downloads_clean_up_files_automatically,
-        )
-        val oldDeleteFromDeviceKey = appContext.getString(R.string.pref_key_downloads_delete_from_device)
-        val oldRemoveFromHistoryKey = appContext.getString(
-            R.string.pref_key_downloads_remove_from_downloads_history,
-        )
-        val oldAskWhenDeletingKey = appContext.getString(R.string.pref_key_downloads_ask_when_to_delete_files)
-
-        val migratedBehavior = when {
-            preferences.contains(legacyCleanupKey) -> {
-                if (preferences.getBoolean(legacyCleanupKey, false)) {
-                    DeleteDownloadBehavior.DELETE_FROM_DEVICE
-                } else {
-                    DeleteDownloadBehavior.REMOVE_FROM_HISTORY
-                }
-            }
-            preferences.getBoolean(oldRemoveFromHistoryKey, false) -> DeleteDownloadBehavior.REMOVE_FROM_HISTORY
-            preferences.getBoolean(oldAskWhenDeletingKey, false) -> DeleteDownloadBehavior.ASK_WHEN_DELETING
-            else -> DeleteDownloadBehavior.DELETE_FROM_DEVICE
-        }
-
-        preferences.edit {
-            putInt(newKey, migratedBehavior.value)
-            remove(legacyCleanupKey)
-            remove(oldDeleteFromDeviceKey)
-            remove(oldRemoveFromHistoryKey)
-            remove(oldAskWhenDeletingKey)
+            fun fromInt(value: Int) = entries.firstOrNull { it.value == value } ?: ASK_WHEN_DELETING
         }
     }
 
     var deleteDownloadBehavior: DeleteDownloadBehavior
         get() = DeleteDownloadBehavior.fromInt(
             preferences.getInt(
-                appContext.getString(R.string.pref_key_downloads_delete_behavior),
-                DeleteDownloadBehavior.DELETE_FROM_DEVICE.value,
+                appContext.getString(R.string.pref_key_downloads_delete_behavior_v2),
+                DeleteDownloadBehavior.ASK_WHEN_DELETING.value,
             ),
         )
         set(value) = preferences.edit {
             putInt(
-                appContext.getString(R.string.pref_key_downloads_delete_behavior),
+                appContext.getString(R.string.pref_key_downloads_delete_behavior_v2),
                 value.value,
             )
         }
@@ -1529,11 +1474,6 @@ class Settings(
         key = appContext.getPreferenceKey(R.string.pref_key_toolbar_expanded),
         default = false,
         persistDefaultIfNotExists = true,
-    )
-
-    var shouldShowToolbarCustomization by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_enable_toolbar_customization),
-        default = { FxNimbus.features.toolbarRedesignOption.value().showCustomization },
     )
 
     val toolbarPosition: ToolbarPosition
@@ -2074,11 +2014,6 @@ class Settings(
         default = true,
     )
 
-    var isSettingsSearchEnabled by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_allow_settings_search),
-        default = { FxNimbus.features.settingsSearch.value().enabled },
-    )
-
     var isSearchOptimizationEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_search_optimization_feature),
         default = { FxNimbus.features.searchOptimizationOption.value().enabled },
@@ -2194,16 +2129,6 @@ class Settings(
     )
 
     /**
-     * Stores the user choice from the "Autofill" settings for whether
-     * credit cards should be synced across devices or not, when the user is authenticated.
-     * If set to `true`, then the credit cards will be synced across devices.
-     */
-    var shouldSyncCreditCardsAcrossDevices by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_credit_cards_sync_cards_across_devices),
-        default = false,
-    )
-
-    /**
      * Stores the user choice from the "Autofill Addresses" settings for whether
      * save and autofill addresses should be enabled or not.
      * If set to `true` when the user focuses on address fields in a webpage an Android prompt is shown,
@@ -2212,16 +2137,6 @@ class Settings(
     var shouldAutofillAddressDetails by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_addresses_save_and_autofill_addresses),
         default = true,
-    )
-
-    /**
-     * Stores the user choice from the "Autofill" settings for whether
-     * addresses should be synced across devices or not, when the user is authenticated.
-     * If set to `true`, then the addresses will be synced across devices.
-     */
-    var shouldSyncAddressesAcrossDevices by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_addresses_sync_cards_across_devices),
-        default = false,
     )
 
     /**
@@ -2340,14 +2255,6 @@ class Settings(
     var shouldUseMinimalBottomToolbarWhenEnteringText by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_use_minimal_bottom_toolbar_while_entering_text),
         default = { FxNimbus.features.minimalAddressbar.value().atBottomWhileEnteringText },
-    )
-
-    /**
-     * Indicates if the user has access to the toolbar redesign option in settings.
-     */
-    var toolbarRedesignEnabled by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_enable_toolbar_redesign),
-        default = { FxNimbus.features.toolbarRedesignOption.value().showOptions },
     )
 
     /**
@@ -2556,6 +2463,34 @@ class Settings(
     )
 
     /**
+     * Nimbus override: when true, treat the user as being within one week of the World Cup
+     * kickoff regardless of the device date. The natural date-based check still applies when
+     * false (the default).
+     */
+    val forceOneWeekToWorldCup: Boolean
+        get() = FxNimbus.features.homepageSportsWidget.value().forceOneWeekToWorldCup
+
+    /**
+     * Debug-only: when true, the Homepage Sports Widget calls the GCP-hosted mock World
+     * Cup server instead of production Merino. Combined with [mockWorldCupServerSession],
+     * the device hits the mock's `<session-id>/api/v1/wcs/...` routes so QA can simulate
+     * any tournament state ahead of kickoff.
+     */
+    var useMockWorldCupServer by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_use_mock_world_cup_server),
+        default = false,
+    )
+
+    /**
+     * Debug-only: session prefix issued by the mock server's UI (e.g. `jolly-narwhal-39`).
+     * Required when [useMockWorldCupServer] is true.
+     */
+    var mockWorldCupServerSession by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_mock_world_cup_server_session),
+        default = "",
+    )
+
+    /**
      * Indicates if the Homepage Sports Widget should be visible on the homepage.
      * This is the user-controlled visibility toggle, independent of the
      * [enableHomepageSportsWidget] feature flag.
@@ -2753,9 +2688,12 @@ class Settings(
         default = true,
     )
 
+    /**
+     * Feature flag that indicates if the Import Bookmarks feature is enabled.
+     */
     var importBookmarksFeatureFlagEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_import_bookmarks),
-        default = Config.channel.isDebug,
+        default = Config.channel.isNightlyOrDebug,
     )
 
     /**
@@ -2869,6 +2807,14 @@ class Settings(
     var coldStartsBetweenSetAsDefaultPrompts by intPreference(
         appContext.getPreferenceKey(R.string.pref_key_app_cold_start_count),
         default = 0,
+    )
+
+    /**
+     * Feature flag that indicates if the Import Passwords feature is enabled.
+     */
+    var importPasswordsFeatureFlagEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_enable_import_passwords),
+        default = Config.channel.isDebug,
     )
 
     /**
@@ -3115,14 +3061,6 @@ class Settings(
     )
 
     /**
-     * Whether the Tab Search feature is enabled.
-     */
-    var tabSearchEnabled by booleanPreference(
-        key = appContext.getPreferenceKey(R.string.pref_key_tab_search),
-        default = { DefaultTabManagementFeatureHelper.tabSearchEnabled },
-    )
-
-    /**
      * Whether the private mode and stories entry point experiment is enabled.
      */
     var privateModeAndStoriesEntryPointEnabled by booleanPreference(
@@ -3204,6 +3142,16 @@ class Settings(
     )
 
     /**
+     * User preference (local only) controlling whether the Google Lens integration is active
+     * when [googleLensIntegrationEnabled] is on. When false, the standard QR scanner is used
+     * and the "Open with Google Lens" image context menu entry is hidden.
+     */
+    var googleLensIntegrationUserEnabled by booleanPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_google_lens_integration_user_enabled),
+        default = true,
+    )
+
+    /**
      * Whether Longfox is enabled.
      */
     var longfoxEnabled by booleanPreference(
@@ -3223,5 +3171,13 @@ class Settings(
     var downloadsDefaultLocation by stringPreference(
         appContext.getPreferenceKey(R.string.pref_key_downloads_default_location),
         default = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path,
+    )
+
+    /**
+     * Whether WebCompat Reporter enhancements is enabled.Í
+     */
+    var webCompatReporterEnhancementsEnabled by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_webcompat_reporter_enhancements),
+        default = { FxNimbus.features.webcompatReporterEnhancements.value().enabled },
     )
 }

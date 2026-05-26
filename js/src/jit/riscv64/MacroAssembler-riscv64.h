@@ -119,9 +119,7 @@ class MacroAssemblerRiscv64 : public Assembler {
   int32_t GetOffset(int32_t offset, Label* L, OffsetSize bits);
 
   inline void GenPCRelativeJump(Register rd, int32_t imm32) {
-    MOZ_ASSERT(is_int32(imm32 + 0x800));
-    int32_t Hi20 = ((imm32 + 0x800) >> 12);
-    int32_t Lo12 = imm32 << 20 >> 20;
+    auto [Hi20, Lo12] = ToHigh20Low12(imm32);
     auipc(rd, Hi20);  // Read PC + Hi20 into scratch.
     jr(rd, Lo12);     // jump PC + Hi20 + Lo12
   }
@@ -172,63 +170,32 @@ class MacroAssemblerRiscv64 : public Assembler {
   CodeOffset BranchAndLinkLong(Label* L);
   void GenPCRelativeJumpAndLink(Register rd, int32_t imm32);
 
-#define DEFINE_INSTRUCTION(instr)                                           \
-  void instr(Register rd, Register rs, Operand rt);                         \
-  void instr(Register rd, Register rs, Imm32 imm) {                         \
-    instr(rd, rs, Operand(imm.value));                                      \
-  }                                                                         \
-  void instr(Register rd, Imm32 imm) { instr(rd, rd, Operand(imm.value)); } \
-  void instr(Register rd, Register rs) { instr(rd, rd, Operand(rs)); }
+#define DEFINE_INSTRUCTION(instr)                     \
+  void instr(Register rd, Register rs, Imm64 imm);    \
+  void instr(Register rd, Register rs, Imm32 imm) {   \
+    instr(rd, rs, Imm64(imm.value));                  \
+  }                                                   \
+  void instr(Register rd, Register rs, ImmWord imm) { \
+    instr(rd, rs, Imm64(imm.value));                  \
+  }
 
-#define DEFINE_INSTRUCTION2(instr)                                 \
-  void instr(Register rd, const Operand& rt);                      \
-  void instr(Register rd, Register rt) { instr(rd, Operand(rt)); } \
-  void instr(Register rd, Imm32 j) { instr(rd, Operand(j.value)); }
+#define DEFINE_INSTRUCTION_I32(instr) \
+  void instr(Register rd, Register rs, Imm32 imm);
 
-  DEFINE_INSTRUCTION(ma_and);
-  DEFINE_INSTRUCTION(ma_or);
-  DEFINE_INSTRUCTION(ma_xor);
-  DEFINE_INSTRUCTION(ma_nor);
-  DEFINE_INSTRUCTION(ma_sub32)
+  DEFINE_INSTRUCTION(ma_and)
+  DEFINE_INSTRUCTION(ma_or)
+  DEFINE_INSTRUCTION(ma_xor)
+  DEFINE_INSTRUCTION_I32(ma_sub32)
   DEFINE_INSTRUCTION(ma_sub64)
-  DEFINE_INSTRUCTION(ma_add32)
+  DEFINE_INSTRUCTION_I32(ma_add32)
   DEFINE_INSTRUCTION(ma_add64)
-  DEFINE_INSTRUCTION(ma_div32)
-  DEFINE_INSTRUCTION(ma_divu32)
-  DEFINE_INSTRUCTION(ma_div64)
-  DEFINE_INSTRUCTION(ma_divu64)
-  DEFINE_INSTRUCTION(ma_mod32)
-  DEFINE_INSTRUCTION(ma_modu32)
-  DEFINE_INSTRUCTION(ma_mod64)
-  DEFINE_INSTRUCTION(ma_modu64)
-  DEFINE_INSTRUCTION(ma_mul32)
-  DEFINE_INSTRUCTION(ma_mulh32)
-  DEFINE_INSTRUCTION(ma_mulhu32)
+  DEFINE_INSTRUCTION_I32(ma_mul32)
+  DEFINE_INSTRUCTION_I32(ma_mulhu32)
   DEFINE_INSTRUCTION(ma_mul64)
-  DEFINE_INSTRUCTION(ma_mulh64)
-  DEFINE_INSTRUCTION(ma_sll64)
-  DEFINE_INSTRUCTION(ma_sra64)
-  DEFINE_INSTRUCTION(ma_srl64)
-  DEFINE_INSTRUCTION(ma_sll32)
-  DEFINE_INSTRUCTION(ma_sra32)
-  DEFINE_INSTRUCTION(ma_srl32)
-  DEFINE_INSTRUCTION(ma_slt)
-  DEFINE_INSTRUCTION(ma_sltu)
-  DEFINE_INSTRUCTION(ma_sle)
-  DEFINE_INSTRUCTION(ma_sleu)
-  DEFINE_INSTRUCTION(ma_sgt)
-  DEFINE_INSTRUCTION(ma_sgtu)
-  DEFINE_INSTRUCTION(ma_sge)
-  DEFINE_INSTRUCTION(ma_sgeu)
-  DEFINE_INSTRUCTION(ma_seq)
-  DEFINE_INSTRUCTION(ma_sne)
 
-  DEFINE_INSTRUCTION2(ma_seqz)
-  DEFINE_INSTRUCTION2(ma_snez)
-  DEFINE_INSTRUCTION2(ma_neg);
-
-#undef DEFINE_INSTRUCTION2
 #undef DEFINE_INSTRUCTION
+#undef DEFINE_INSTRUCTION_I32
+
   // arithmetic based ops
   void ma_add32TestOverflow(Register rd, Register rj, Register rk,
                             Label* overflow);
@@ -296,7 +263,7 @@ class MacroAssemblerRiscv64 : public Assembler {
                  JumpKind jumpKind = ShortJump);
 
   void ma_branch(Label* target, JumpKind jumpKind = ShortJump) {
-    ma_branch(target, Always, zero, zero, jumpKind);
+    ma_branch(target, Always, zero, Operand(zero), jumpKind);
   }
 
   // fp instructions
@@ -413,21 +380,10 @@ class MacroAssemblerRiscv64 : public Assembler {
     fmv_x_d(dest, src);
     srli(dest, dest, 32);
   }
+
   // Bit field starts at bit pos and extending for size bits is extracted from
-  // rs and stored zero/sign-extended and right-justified in rt
-  void ExtractBits(Register rt, Register rs, uint16_t pos, uint16_t size,
-                   bool sign_extend = false);
-  void ExtractBits(Register dest, Register source, Register pos, int size,
-                   bool sign_extend = false) {
-    sra(dest, source, pos);
-    ExtractBits(dest, dest, 0, size, sign_extend);
-  }
-
-  // Insert bits [0, size) of source to bits [pos, pos+size) of dest
-  void InsertBits(Register dest, Register source, Register pos, int size);
-
-  // Insert bits [0, size) of source to bits [pos, pos+size) of dest
-  void InsertBits(Register dest, Register source, int pos, int size);
+  // rs and stored zero-extended and right-justified in rd.
+  void ExtractBits(Register rd, Register rs, uint16_t pos, uint16_t size);
 
   template <typename F_TYPE>
   void RoundHelper(FPURegister dst, FPURegister src, FPURegister fpu_scratch,
@@ -545,11 +501,17 @@ class MacroAssemblerRiscv64 : public Assembler {
   void ByteSwap(Register dest, Register src, int operand_size,
                 Register scratch);
 
-  void Rol(Register rd, Register rs, const Operand& rt);
-  void Drol(Register rd, Register rs, const Operand& rt);
+  void Rol(Register rd, Register rs, Imm32 rt);
+  void Rol(Register rd, Register rs, Register rt);
 
-  void Ror(Register rd, Register rs, const Operand& rt);
-  void Dror(Register rd, Register rs, const Operand& rt);
+  void Drol(Register rd, Register rs, Imm32 rt);
+  void Drol(Register rd, Register rs, Register rt);
+
+  void Ror(Register rd, Register rs, Imm32 rt);
+  void Ror(Register rd, Register rs, Register rt);
+
+  void Dror(Register rd, Register rs, Imm32 rt);
+  void Dror(Register rd, Register rs, Register rt);
 
   void Float32Max(FPURegister dst, FPURegister src1, FPURegister src2);
   void Float32Min(FPURegister dst, FPURegister src1, FPURegister src2);
@@ -578,7 +540,7 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
   MacroAssemblerRiscv64Compat() {}
 
   void convertBoolToInt32(Register src, Register dest) {
-    ma_and(dest, src, Imm32(0xff));
+    andi(dest, src, 0xff);
   };
   void convertInt32ToDouble(Register src, FloatRegister dest) {
     fcvt_d_w(dest, src);
@@ -653,7 +615,7 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
 
   void j(Label* dest) { ma_branch(dest); }
 
-  void mov(Register src, Register dest) { addi(dest, src, 0); }
+  void mov(Register src, Register dest) { mv(dest, src); }
   void mov(ImmWord imm, Register dest) { ma_li(dest, imm); }
   void mov(ImmPtr imm, Register dest) {
     mov(ImmWord(uintptr_t(imm.value)), dest);
@@ -729,7 +691,7 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
 
   static size_t ToggledCallSize(uint8_t* code) {
     // Four instructions used in: MacroAssemblerRiscv64Compat::toggledCall
-    return 7 * sizeof(uint32_t);
+    return 7 * kInstrSize;
   }
 
   CodeOffset pushWithPatch(ImmWord imm) {
@@ -794,14 +756,14 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
 
   void moveIfZero(Register dst, Register src, Register cond) {
     Label done;
-    ma_branch(&done, NotEqual, cond, zero);
+    ma_branch(&done, NotEqual, cond, Operand(zero));
     mv(dst, src);
     bind(&done);
   }
 
   void moveIfNotZero(Register dst, Register src, Register cond) {
     Label done;
-    ma_branch(&done, Equal, cond, zero);
+    ma_branch(&done, Equal, cond, Operand(zero));
     mv(dst, src);
     bind(&done);
   }
@@ -844,18 +806,16 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
   }
 
   void unboxWasmAnyRefGCThingForGCBarrier(const Address& src, Register dest) {
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
-    MOZ_ASSERT(scratch != dest);
-    movePtr(ImmWord(wasm::AnyRef::GCThingMask), scratch);
+    static_assert(is_int12(wasm::AnyRef::GCThingMask), "fits into andi");
+
     loadPtr(src, dest);
-    ma_and(dest, dest, scratch);
+    andi(dest, dest, int16_t(wasm::AnyRef::GCThingMask));
   }
 
   void getWasmAnyRefGCThingChunk(Register src, Register dest) {
     MOZ_ASSERT(src != dest);
     movePtr(ImmWord(wasm::AnyRef::GCThingChunkMask), dest);
-    ma_and(dest, dest, src);
+    and_(dest, dest, src);
   }
 
   // Like unboxGCThingForGCBarrier, but loads the GC thing's chunk base.
@@ -904,7 +864,7 @@ class MacroAssemblerRiscv64Compat : public MacroAssemblerRiscv64 {
                   JSValueType type);
 
   void notBoolean(const ValueOperand& val) {
-    xori(val.valueReg(), val.valueReg(), 1);
+    NegateBool(val.valueReg(), val.valueReg());
   }
 
   // boxing code

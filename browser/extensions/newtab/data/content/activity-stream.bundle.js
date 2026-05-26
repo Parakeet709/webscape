@@ -306,8 +306,13 @@ for (const type of [
   "WIDGETS_LISTS_UPDATE",
   "WIDGETS_LISTS_USER_EVENT",
   "WIDGETS_LISTS_USER_IMPRESSION",
+  "WIDGETS_SPORTS_CHANGE_FOLLOWED_ONLY",
+  "WIDGETS_SPORTS_CHANGE_MATCHES_TAB",
   "WIDGETS_SPORTS_CHANGE_SELECTED_TEAMS",
   "WIDGETS_SPORTS_CHANGE_WIDGET_STATE",
+  "WIDGETS_SPORTS_OPEN_MATCH_SEARCH",
+  "WIDGETS_SPORTS_SET_FOLLOWED_ONLY",
+  "WIDGETS_SPORTS_SET_MATCHES_TAB",
   "WIDGETS_SPORTS_SET_SELECTED_TEAMS",
   "WIDGETS_SPORTS_SET_WIDGET_STATE",
   "WIDGETS_SPORTS_WIDGET_SET",
@@ -5995,7 +6000,9 @@ _PerfService.prototype = {
    * @return {void}
    */
   mark: function mark(str) {
-    this._perf.mark(str);
+    if (typeof this._perf.mark === "function") {
+      this._perf.mark(str);
+    }
   },
 
   /**
@@ -6007,7 +6014,10 @@ _PerfService.prototype = {
    * @return {Array}       Performance* objects
    */
   getEntriesByName: function getEntriesByName(entryName, type) {
-    return this._perf.getEntriesByName(entryName, type);
+    if (typeof this._perf.getEntriesByName === "function") {
+      return this._perf.getEntriesByName(entryName, type);
+    }
+    return [];
   },
 
   /**
@@ -6741,6 +6751,10 @@ const INITIAL_STATE = {
     initialized: false,
     widgetState: "sports-intro",
     selectedTeams: [],
+    matchesTab: "upcoming",
+    // Per-tab "Only followed teams" filter toggle. Defaults to on so users
+    // who follow teams see the filtered list right away.
+    followedOnly: { results: true, upcoming: true },
   },
 };
 
@@ -7737,6 +7751,13 @@ function SportsWidget(prevState = INITIAL_STATE.SportsWidget, action) {
       return { ...prevState, widgetState: action.data };
     case actionTypes.WIDGETS_SPORTS_SET_SELECTED_TEAMS:
       return { ...prevState, selectedTeams: action.data };
+    case actionTypes.WIDGETS_SPORTS_SET_MATCHES_TAB:
+      return { ...prevState, matchesTab: action.data };
+    case actionTypes.WIDGETS_SPORTS_SET_FOLLOWED_ONLY:
+      return {
+        ...prevState,
+        followedOnly: { ...prevState.followedOnly, ...action.data },
+      };
     default:
       return prevState;
   }
@@ -9012,7 +9033,7 @@ class _TopSiteList extends (external_React_default()).PureComponent {
   _getTopSites() {
     // Make a copy of the sites to truncate or extend to desired length
     let topSites = this.props.TopSites.rows.slice();
-    topSites.length = this.props.TopSitesRows * (this.props.topSitesMaxSitesPerRow ?? TOP_SITES_MAX_SITES_PER_ROW);
+    topSites.length = (this.props.TopSitesRows ?? 0) * (this.props.topSitesMaxSitesPerRow ?? TOP_SITES_MAX_SITES_PER_ROW);
     // if topSites do not fill an entire row add 'Add shortcut' button to array of topSites
     // (there should only be one of these)
     const addButtonIndex = topSites.findIndex(site => site?.isAddButton);
@@ -10082,6 +10103,8 @@ class Topic extends (external_React_default()).PureComponent {
     }, topicName);
   }
 }
+
+// eslint-disable-next-line no-shadow
 class Navigation extends (external_React_default()).PureComponent {
   render() {
     let links = this.props.links || [];
@@ -11936,7 +11959,14 @@ function CardSections({
   }, sectionsToRender);
 }
 
-;// CONCATENATED MODULE: ./content-src/components/Widgets/WidgetsRegistry.mjs
+;// CONCATENATED MODULE: ./content-src/lib/BaseContext.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+const BaseContext = /*#__PURE__*/external_React_default().createContext({});
+;// CONCATENATED MODULE: ./common/WidgetsRegistry.mjs
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12095,7 +12125,7 @@ const WIDGET_REGISTRY = [
   },
   {
     id: "sportsWidget",
-    telemetryName: "sports_widget",
+    telemetryName: "sports",
     order: 3,
     enabledPref: PREF_WIDGETS_SPORTS_WIDGET_ENABLED,
     sizePref: PREF_SPORTS_WIDGET_SIZE,
@@ -12428,11 +12458,103 @@ const useWidgetCelebration = widgetRef => {
     triggerCelebration
   };
 };
+;// CONCATENATED MODULE: ./content-src/components/Widgets/MoveSubmenu.jsx
+function MoveSubmenu_extends() { return MoveSubmenu_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, MoveSubmenu_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+// Action is order-based and direction-agnostic: onMoveLeft always swaps with
+// the previous item in the order array. The Fluent strings handle the visual
+// flip for RTL locales by translating "Left" as "Right" (and vice versa).
+function buildMoveProps(id, order, enabledMap, dispatch) {
+  const visible = order.filter(w => enabledMap?.[w]);
+  const idx = visible.indexOf(id);
+  const swap = delta => () => {
+    const target = visible[idx + delta];
+    if (!target) {
+      return;
+    }
+    const newOrder = [...order];
+    const a = newOrder.indexOf(id);
+    const b = newOrder.indexOf(target);
+    [newOrder[a], newOrder[b]] = [newOrder[b], newOrder[a]];
+    dispatch(actionCreators.SetPref(PREF_WIDGETS_ORDER, newOrder.join(",")));
+  };
+  return {
+    canMoveLeft: visible[idx - 1] !== undefined,
+    canMoveRight: visible[idx + 1] !== undefined,
+    onMoveLeft: swap(-1),
+    onMoveRight: swap(+1)
+  };
+}
+
+// Submenu panel-list children are moved into the panel-item's shadow DOM
+// by the panel-list custom element, so React's synthetic onClick doesn't
+// reach them. Listen at the panel-list root and walk composedPath() to
+// find the clicked item by its data-move-dir attribute.
+function MoveSubmenu({
+  widgetId,
+  widgetEnabledMap
+}) {
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
+  const ref = (0,external_React_namespaceObject.useRef)(null);
+  const moveProps = buildMoveProps(widgetId, resolveWidgetOrder(prefs), widgetEnabledMap, dispatch);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const el = ref.current;
+    if (!el) {
+      return undefined;
+    }
+    const listener = e => {
+      const item = e.composedPath().find(n => n.dataset?.moveDir);
+      if (!item) {
+        return;
+      }
+      if (item.dataset.moveDir === "left") {
+        moveProps.onMoveLeft();
+      } else if (item.dataset.moveDir === "right") {
+        moveProps.onMoveRight();
+      }
+    };
+    el.addEventListener("click", listener);
+    return () => el.removeEventListener("click", listener);
+  }, [moveProps]);
+  if (!moveProps.canMoveLeft && !moveProps.canMoveRight) {
+    return null;
+  }
+  const submenuId = `${widgetId}-move-submenu`;
+  return /*#__PURE__*/external_React_default().createElement("panel-item", {
+    submenu: submenuId
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    "data-l10n-id": "newtab-widget-menu-move"
+  }), /*#__PURE__*/external_React_default().createElement("panel-list", {
+    ref: ref,
+    slot: "submenu",
+    id: submenuId
+  }, /*#__PURE__*/external_React_default().createElement("panel-item", MoveSubmenu_extends({
+    "data-l10n-id": "newtab-widget-menu-move-left",
+    "data-move-dir": "left"
+  }, moveProps.canMoveLeft ? {} : {
+    disabled: true
+  })), /*#__PURE__*/external_React_default().createElement("panel-item", MoveSubmenu_extends({
+    "data-l10n-id": "newtab-widget-menu-move-right",
+    "data-move-dir": "right"
+  }, moveProps.canMoveRight ? {} : {
+    disabled: true
+  }))));
+}
 ;// CONCATENATED MODULE: ./content-src/components/Widgets/Lists/Lists.jsx
 function Lists_extends() { return Lists_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, Lists_extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -12462,7 +12584,7 @@ const PREF_WIDGETS_LISTS_BADGE_ENABLED = "widgets.lists.badge.enabled";
 const PREF_WIDGETS_LISTS_BADGE_LABEL = "widgets.lists.badge.label";
 const PREF_WIDGETS_LISTS_SIZE = "widgets.lists.size";
 const Lists_PREF_NOVA_ENABLED = "nova.enabled";
-const LISTS_EMPTY_STATE_ILLUSTRATION = "chrome://newtab/content/data/content/assets/firefox-pictorgram-pencil-rgb.svg";
+const LISTS_EMPTY_STATE_ILLUSTRATION = "chrome://newtab/content/data/content/assets/lists-empty-state-comet.svg";
 const LISTS_CELEBRATION = {
   headlineL10nId: "newtab-widget-lists-celebration-headline",
   illustrationSrc: "chrome://newtab/content/data/content/assets/firefox-motion-head-pop-up-no-bg.svg",
@@ -12539,7 +12661,8 @@ function Lists({
   dispatch,
   handleUserInteraction,
   isMaximized,
-  widgetsMayBeMaximized
+  widgetsMayBeMaximized,
+  widgetEnabledMap
 }) {
   const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
   const {
@@ -12549,7 +12672,7 @@ function Lists({
   const [newTask, setNewTask] = (0,external_React_namespaceObject.useState)("");
   const [isAddingTask, setIsAddingTask] = (0,external_React_namespaceObject.useState)(false);
   const [isEditing, setIsEditing] = (0,external_React_namespaceObject.useState)(false);
-  const [pendingNewList, setPendingNewList] = (0,external_React_namespaceObject.useState)(null);
+  const [isCreatingNewList, setIsCreatingNewList] = (0,external_React_namespaceObject.useState)(false);
   const [showCompactCompleted, setShowCompactCompleted] = (0,external_React_namespaceObject.useState)(false);
   const selectedList = (0,external_React_namespaceObject.useMemo)(() => lists[selected], [lists, selected]);
   const novaEnabled = prefs[Lists_PREF_NOVA_ENABLED];
@@ -12573,7 +12696,6 @@ function Lists({
   };
   const widgetSize = getListsWidgetSize();
   const isMediumSize = widgetSize === "medium";
-  const prevCompletedCount = (0,external_React_namespaceObject.useRef)(selectedList?.completed?.length || 0);
   const inputRef = (0,external_React_namespaceObject.useRef)(null);
   const reorderListRef = (0,external_React_namespaceObject.useRef)(null);
   const sizeSubmenuRef = (0,external_React_namespaceObject.useRef)(null);
@@ -12589,7 +12711,7 @@ function Lists({
   const handleListInteraction = (0,external_React_namespaceObject.useCallback)(() => handleUserInteraction("lists"), [handleUserInteraction]);
   const handleSelectList = (0,external_React_namespaceObject.useCallback)(listId => {
     setIsEditing(false);
-    setPendingNewList(null);
+    setIsCreatingNewList(false);
     dispatch(actionCreators.AlsoToMain({
       type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
       data: listId
@@ -12681,14 +12803,6 @@ function Lists({
       reorderNode?.removeEventListener("reorder", handleReorder);
     };
   }, [reorderLists]);
-
-  // effect that enables editing new list name only after store has been hydrated
-  (0,external_React_namespaceObject.useEffect)(() => {
-    if (selected === pendingNewList) {
-      setIsEditing(true);
-      setPendingNewList(null);
-    }
-  }, [selected, pendingNewList]);
   (0,external_React_namespaceObject.useEffect)(() => {
     if (isAddingTask) {
       inputRef.current?.focus();
@@ -12771,6 +12885,9 @@ function Lists({
       newTasks = selectedList.tasks.filter(task => task.id !== updatedTask.id);
       newCompleted = [...selectedList.completed, updatedTask];
       userAction = USER_ACTION_TYPES.TASK_COMPLETE;
+      if (!newTasks.length && newCompleted.length) {
+        triggerCelebration();
+      }
     } else {
       const targetKey = isCompletedType ? "completed" : "tasks";
       const updatedArray = selectedList[targetKey].map(task => task.id === updatedTask.id ? updatedTask : task);
@@ -12871,6 +12988,52 @@ function Lists({
   }
   function handleListNameSave(newLabel) {
     const trimmedLabel = newLabel.trimEnd();
+    if (isCreatingNewList) {
+      setIsCreatingNewList(false);
+      if (!trimmedLabel) {
+        handleListInteraction();
+        return;
+      }
+      const id = crypto.randomUUID();
+      const newLists = {
+        ...lists,
+        [id]: {
+          label: trimmedLabel,
+          tasks: [],
+          completed: []
+        }
+      };
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_UPDATE,
+          data: {
+            lists: newLists
+          }
+        }));
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
+          data: id
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+          data: {
+            userAction: USER_ACTION_TYPES.LIST_CREATE
+          }
+        }));
+        const telemetryData = {
+          widget_name: "lists",
+          widget_source: "widget",
+          user_action: USER_ACTION_TYPES.LIST_CREATE,
+          widget_size: widgetsMayBeMaximized ? widgetSize : "medium"
+        };
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_USER_EVENT,
+          data: telemetryData
+        }));
+      });
+      handleListInteraction();
+      return;
+    }
     if (trimmedLabel && trimmedLabel !== selectedList?.label) {
       const updatedLists = {
         ...lists,
@@ -12908,83 +13071,13 @@ function Lists({
     }
   }
   function handleCreateNewList() {
-    const id = crypto.randomUUID();
-    const newLists = {
-      ...lists,
-      [id]: {
-        label: "",
-        tasks: [],
-        completed: []
-      }
-    };
-    (0,external_ReactRedux_namespaceObject.batch)(() => {
-      dispatch(actionCreators.AlsoToMain({
-        type: actionTypes.WIDGETS_LISTS_UPDATE,
-        data: {
-          lists: newLists
-        }
-      }));
-      dispatch(actionCreators.AlsoToMain({
-        type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
-        data: id
-      }));
-      dispatch(actionCreators.OnlyToMain({
-        type: actionTypes.WIDGETS_LISTS_USER_EVENT,
-        data: {
-          userAction: USER_ACTION_TYPES.LIST_CREATE
-        }
-      }));
-      const telemetryData = {
-        widget_name: "lists",
-        widget_source: "widget",
-        user_action: USER_ACTION_TYPES.LIST_CREATE,
-        widget_size: widgetsMayBeMaximized ? widgetSize : "medium"
-      };
-      dispatch(actionCreators.OnlyToMain({
-        type: actionTypes.WIDGETS_USER_EVENT,
-        data: telemetryData
-      }));
-    });
-    setPendingNewList(id);
+    setIsCreatingNewList(true);
+    setIsEditing(true);
     handleListInteraction();
   }
   function handleCancelNewList() {
-    // If current list is new and has no label/tasks, remove it
-    if (!selectedList?.label && selectedList?.tasks?.length === 0) {
-      const updatedLists = {
-        ...lists
-      };
-      delete updatedLists[selected];
-      const listKeys = Object.keys(updatedLists);
-      const key = listKeys[listKeys.length - 1];
-      (0,external_ReactRedux_namespaceObject.batch)(() => {
-        dispatch(actionCreators.AlsoToMain({
-          type: actionTypes.WIDGETS_LISTS_UPDATE,
-          data: {
-            lists: updatedLists
-          }
-        }));
-        dispatch(actionCreators.AlsoToMain({
-          type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
-          data: key
-        }));
-        dispatch(actionCreators.OnlyToMain({
-          type: actionTypes.WIDGETS_LISTS_USER_EVENT,
-          data: {
-            userAction: USER_ACTION_TYPES.LIST_DELETE
-          }
-        }));
-        const telemetryData = {
-          widget_name: "lists",
-          widget_source: "widget",
-          user_action: USER_ACTION_TYPES.LIST_DELETE,
-          widget_size: widgetsMayBeMaximized ? widgetSize : "medium"
-        };
-        dispatch(actionCreators.OnlyToMain({
-          type: actionTypes.WIDGETS_USER_EVENT,
-          data: telemetryData
-        }));
-      });
+    if (isCreatingNewList) {
+      setIsCreatingNewList(false);
     }
     handleListInteraction();
   }
@@ -13145,25 +13238,9 @@ function Lists({
     el.addEventListener("click", listener);
     return () => el.removeEventListener("click", listener);
   }, [handleChangeSize]);
-
-  // Reset baseline only when switching lists
   (0,external_React_namespaceObject.useEffect)(() => {
-    prevCompletedCount.current = selectedList?.completed?.length || 0;
     setIsAddingTask(false);
-    // intentionally leaving out selectedList from dependency array
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
-  (0,external_React_namespaceObject.useEffect)(() => {
-    if (selectedList) {
-      const doneCount = selectedList.completed?.length || 0;
-      const previous = Math.floor(prevCompletedCount.current / 5);
-      const current = Math.floor(doneCount / 5);
-      if (current > previous) {
-        triggerCelebration();
-      }
-      prevCompletedCount.current = doneCount;
-    }
-  }, [selectedList, triggerCelebration, selected]);
   if (!lists) {
     return null;
   }
@@ -13243,7 +13320,8 @@ function Lists({
   }) : null, /*#__PURE__*/external_React_default().createElement("div", {
     className: "lists-header"
   }, /*#__PURE__*/external_React_default().createElement(EditableText, {
-    value: lists[selected]?.label || "",
+    key: `${selected}-${isCreatingNewList ? "draft" : "saved"}`,
+    value: isCreatingNewList ? "" : lists[selected]?.label || "",
     onSave: handleListNameSave,
     isEditing: isEditing,
     setIsEditing: setIsEditing,
@@ -13251,7 +13329,8 @@ function Lists({
     type: "list",
     maxLength: 30,
     ariaLabelL10nId: "newtab-widget-lists-menu-edit2",
-    dataL10nId: listNamePlaceholder
+    saveOnBlur: !isCreatingNewList,
+    dataL10nId: isCreatingNewList ? "newtab-widget-lists-name-placeholder-new2" : listNamePlaceholder
   }, renderListSwitcherOrTitle({
     currentListsCount,
     lists,
@@ -13319,7 +13398,10 @@ function Lists({
     checked: widgetSize === size || undefined,
     "data-size": size,
     "data-l10n-id": `newtab-widget-size-${size}`
-  })))), /*#__PURE__*/external_React_default().createElement("panel-item", {
+  })))), /*#__PURE__*/external_React_default().createElement(MoveSubmenu, {
+    widgetId: "lists",
+    widgetEnabledMap: widgetEnabledMap
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
     "data-l10n-id": "newtab-widget-menu-hide",
     onClick: () => handleHideLists()
   }), /*#__PURE__*/external_React_default().createElement("panel-item", {
@@ -13349,11 +13431,11 @@ function Lists({
   }, showEmptyState ? /*#__PURE__*/external_React_default().createElement("div", {
     className: "empty-list"
   }, /*#__PURE__*/external_React_default().createElement("img", {
+    alt: "",
     className: "empty-list-illustration",
+    height: "66",
     src: LISTS_EMPTY_STATE_ILLUSTRATION,
-    width: "68",
-    height: "68",
-    alt: ""
+    width: "75"
   })) : /*#__PURE__*/external_React_default().createElement("moz-reorderable-list", {
     ref: reorderListRef,
     itemSelector: "fieldset .task-type-tasks",
@@ -13521,10 +13603,14 @@ function EditableText({
   type,
   dataL10nId = null,
   ariaLabelL10nId = null,
-  maxLength = 100
+  maxLength = 100,
+  saveOnBlur = true
 }) {
   const [tempValue, setTempValue] = (0,external_React_namespaceObject.useState)(value);
   const inputRef = (0,external_React_namespaceObject.useRef)(null);
+  const wrapperRef = (0,external_React_namespaceObject.useRef)(null);
+  const previousFocusRef = (0,external_React_namespaceObject.useRef)(null);
+  const cancellingRef = (0,external_React_namespaceObject.useRef)(false);
 
   // True if tempValue is empty, null/undefined, or only whitespace
   const showPlaceholder = (tempValue ?? "").trim() === "";
@@ -13532,26 +13618,64 @@ function EditableText({
   const inputL10nAttrs = showPlaceholder && dataL10nId ? "placeholder,aria-label" : "aria-label";
   (0,external_React_namespaceObject.useEffect)(() => {
     if (isEditing) {
+      cancellingRef.current = false;
+      previousFocusRef.current = document.activeElement;
       inputRef.current?.focus();
-    } else {
+    }
+  }, [isEditing]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (!isEditing) {
       setTempValue(value);
     }
   }, [isEditing, value]);
+  const handleRestoreFocus = () => {
+    const target = previousFocusRef.current;
+    if (target && document.contains(target)) {
+      target.focus();
+    }
+  };
   function handleKeyDown(e) {
     if (e.key === "Enter") {
       onSave(tempValue.trim());
       setIsEditing(false);
     } else if (e.key === "Escape") {
+      cancellingRef.current = true;
       setIsEditing(false);
       setTempValue(value);
       onCancel?.();
+      handleRestoreFocus();
     }
   }
-  function handleOnBlur() {
+  function handleOnBlur(e) {
+    // Skip save when cancelling via Escape or the clear button — the
+    // restored focus would otherwise trip handleOnBlur into saving.
+    if (cancellingRef.current) {
+      cancellingRef.current = false;
+      return;
+    }
+    // Skip save when focus moved to the cancel button so its click handler can run.
+    if (e.relatedTarget && wrapperRef.current?.contains(e.relatedTarget)) {
+      return;
+    }
+    if (!saveOnBlur) {
+      if (tempValue.trim()) {
+        return;
+      }
+      setIsEditing(false);
+      onCancel?.();
+      return;
+    }
     onSave(tempValue.trim());
     setIsEditing(false);
   }
-  return isEditing ? /*#__PURE__*/external_React_default().createElement("input", Lists_extends({
+  function handleClear() {
+    cancellingRef.current = true;
+    setIsEditing(false);
+    setTempValue(value);
+    onCancel?.();
+    handleRestoreFocus();
+  }
+  const input = /*#__PURE__*/external_React_default().createElement("input", Lists_extends({
     className: `edit-${type}`,
     ref: inputRef,
     type: "text",
@@ -13564,7 +13688,24 @@ function EditableText({
     "data-l10n-id": inputL10nId
   } : {}, inputL10nId ? {
     "data-l10n-attrs": inputL10nAttrs
-  } : {})) : [children];
+  } : {}));
+  if (!isEditing) {
+    return [children];
+  }
+  if (type === "list") {
+    return /*#__PURE__*/external_React_default().createElement("div", {
+      className: "edit-list-wrapper",
+      ref: wrapperRef
+    }, input, /*#__PURE__*/external_React_default().createElement("moz-button", {
+      className: "edit-list-clear",
+      type: "icon ghost",
+      size: "small",
+      iconSrc: "chrome://global/skin/icons/close.svg",
+      "data-l10n-id": "newtab-widget-lists-edit-clear",
+      onClick: handleClear
+    }));
+  }
+  return input;
 }
 
 ;// CONCATENATED MODULE: ./content-src/components/Widgets/FocusTimer/FocusTimer.jsx
@@ -13572,6 +13713,7 @@ function FocusTimer_extends() { return FocusTimer_extends = Object.assign ? Obje
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -13707,7 +13849,8 @@ const FocusTimer = ({
   dispatch,
   handleUserInteraction,
   isMaximized,
-  widgetsMayBeMaximized
+  widgetsMayBeMaximized,
+  widgetEnabledMap
 }) => {
   const [timeLeft, setTimeLeft] = (0,external_React_namespaceObject.useState)(0);
   // calculated value for the progress circle; 1 = 100%
@@ -14483,7 +14626,10 @@ const FocusTimer = ({
     "data-l10n-id": `newtab-widget-size-${size}`
   }, size === "small" ? {
     disabled: true
-  } : {}))))),
+  } : {}))))), /*#__PURE__*/external_React_default().createElement(MoveSubmenu, {
+    widgetId: "focusTimer",
+    widgetEnabledMap: widgetEnabledMap
+  }),
   // @nova-cleanup(remove-conditional): Remove the `novaEnabled &&` check; always render the divider.
   novaEnabled && /*#__PURE__*/external_React_default().createElement("hr", null), /*#__PURE__*/external_React_default().createElement("panel-item", {
     "data-l10n-id": "newtab-widget-timer-menu-learn-more",
@@ -15249,6 +15395,8 @@ function WeatherForecast({
 
 
 
+
+
 const Weather_USER_ACTION_TYPES = {
   CHANGE_LOCATION: "change_location",
   DETECT_LOCATION: "detect_location",
@@ -15258,10 +15406,10 @@ const Weather_USER_ACTION_TYPES = {
   OPT_IN_ACCEPTED: "opt_in_accepted",
   PROVIDER_LINK_CLICK: "provider_link_click"
 };
-const Weather_PREF_WEATHER_SIZE = "widgets.weather.size";
 function Weather_Weather({
   dispatch,
-  size
+  size,
+  widgetEnabledMap
 }) {
   const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
   const weatherData = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Weather);
@@ -15269,7 +15417,7 @@ function Weather_Weather({
   const errorTelemetrySent = (0,external_React_namespaceObject.useRef)(false);
   const errorRef = (0,external_React_namespaceObject.useRef)(null);
   const sizeSubmenuRef = (0,external_React_namespaceObject.useRef)(null);
-  const currentWeatherSize = prefs[Weather_PREF_WEATHER_SIZE] || "medium";
+  const currentWeatherSize = prefs[PREF_WEATHER_SIZE] || "medium";
   const trainhopWidgetsEnabled = prefs.trainhopConfig?.widgets?.enabled;
   const widgetsSystemEnabled = trainhopWidgetsEnabled || prefs["widgets.system.enabled"];
   const widgetsEnabled = trainhopWidgetsEnabled || prefs["widgets.enabled"];
@@ -15279,7 +15427,7 @@ function Weather_Weather({
       dispatch(actionCreators.OnlyToMain({
         type: actionTypes.SET_PREF,
         data: {
-          name: Weather_PREF_WEATHER_SIZE,
+          name: PREF_WEATHER_SIZE,
           value: newSize
         }
       }));
@@ -15308,7 +15456,7 @@ function Weather_Weather({
     };
     el.addEventListener("click", listener);
     return () => el.removeEventListener("click", listener);
-  }, [handleChangeSize]);
+  }, [handleChangeSize, weatherData?.initialized]);
   const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
     if (impressionFired.current) {
       return;
@@ -15555,7 +15703,10 @@ function Weather_Weather({
       checked: currentWeatherSize === s || undefined,
       "data-size": s,
       "data-l10n-id": `newtab-widget-size-${s}`
-    })))), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    })))), /*#__PURE__*/external_React_default().createElement(MoveSubmenu, {
+      widgetId: "weather",
+      widgetEnabledMap: widgetEnabledMap
+    }), /*#__PURE__*/external_React_default().createElement("panel-item", {
       "data-l10n-id": "newtab-widget-menu-hide",
       onClick: handleHideWeather
     }), /*#__PURE__*/external_React_default().createElement("panel-item", {
@@ -15564,7 +15715,10 @@ function Weather_Weather({
     })));
   }
   function getArticleClassNames() {
-    return ["weather-widget", "col-4", `${size}-widget`, hasError && "weather-error-state",
+    return ["weather-widget", "col-4", `${size}-widget`,
+    // weather-error-state is suppressed during opt-in so the error UI does
+    // not overlap or push the opt-in layout out of its container.
+    hasError && !showOptInState && "weather-error-state",
     // weather-opt-in is suppressed while search is active so the opt-in
     // layout styles don't conflict with the search UI layout.
     showOptInState && !searchActive && "weather-opt-in",
@@ -15585,7 +15739,7 @@ function Weather_Weather({
     className: "widget-title-bar"
   }, /*#__PURE__*/external_React_default().createElement("div", {
     className: "widget-title"
-  }, !showOptInState && !searchActive && /*#__PURE__*/external_React_default().createElement("h3", null, weatherData.locationData.city)), !searchActive && renderContextMenu()), hasError && /*#__PURE__*/external_React_default().createElement("div", {
+  }, !showOptInState && !searchActive && /*#__PURE__*/external_React_default().createElement("h3", null, weatherData.locationData.city)), !searchActive && renderContextMenu()), hasError && !showOptInState && /*#__PURE__*/external_React_default().createElement("div", {
     className: "weather-error",
     ref: errorRef
   }, /*#__PURE__*/external_React_default().createElement("span", {
@@ -15792,6 +15946,483 @@ function WidgetsRowFeatureHighlight({
   }));
 }
 
+;// CONCATENATED MODULE: ./content-src/components/Widgets/SportsWidget/SportsMatchRow.jsx
+function SportsMatchRow_extends() { return SportsMatchRow_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, SportsMatchRow_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+const SportsMatchRow_PREF_SPORTS_WIDGET_SIZE = "widgets.sportsWidget.size";
+const STATUS_L10N_MAP = {
+  delayed: "newtab-sports-widget-delayed",
+  postponed: "newtab-sports-widget-postponed",
+  suspended: "newtab-sports-widget-suspended",
+  cancelled: "newtab-sports-widget-cancelled"
+};
+const UPCOMING_STATUS_ARIA_L10N_MAP = {
+  delayed: "newtab-sports-widget-match-aria-label-upcoming-delayed",
+  postponed: "newtab-sports-widget-match-aria-label-upcoming-postponed",
+  suspended: "newtab-sports-widget-match-aria-label-upcoming-suspended",
+  cancelled: "newtab-sports-widget-match-aria-label-upcoming-cancelled"
+};
+function ScorePill({
+  homeScore,
+  awayScore,
+  homePenalty,
+  awayPenalty,
+  variant
+}) {
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: `sports-score-pill sports-score-pill-${variant}`
+  }, homePenalty !== null && homePenalty !== undefined && /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-score-penalty"
+  }, "(", homePenalty, ")"), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-score-home"
+  }, homeScore), /*#__PURE__*/external_React_default().createElement("span", {
+    "aria-hidden": "true"
+  }, "-"), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-score-away"
+  }, awayScore), awayPenalty !== null && awayPenalty !== undefined && /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-score-penalty"
+  }, "(", awayPenalty, ")"));
+}
+function SportsMatchRow({
+  match,
+  variant,
+  size = "large",
+  handleInteraction,
+  followedTeams
+}) {
+  const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
+  // Read the widget size pref (not `size`, which can be "list" when the
+  // user expanded the view) so the telemetry event below reports the user's
+  // actual chosen size.
+  const widgetSize = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values[SportsMatchRow_PREF_SPORTS_WIDGET_SIZE] || "medium");
+  const {
+    home_team,
+    away_team,
+    date,
+    status_type,
+    home_score,
+    away_score,
+    home_extra,
+    away_extra,
+    home_penalty,
+    away_penalty,
+    query
+  } = match;
+  const isHomeFollowed = !!followedTeams?.has(home_team.key);
+  const isAwayFollowed = !!followedTeams?.has(away_team.key);
+  const dateTimestamp = new Date(date).getTime();
+  // (developer note): Assumes home_score/away_score exclude extra time goals
+  const displayHomeScore = home_score + (home_extra || 0);
+  const displayAwayScore = away_score + (away_extra || 0);
+  // A match went to a shootout only when both penalty scores are present.
+  // Checking both guards against asymmetric/corrupt data where one side is
+  // null — which would otherwise pass a `null` into the aria-label args.
+  const hasPenalties = home_penalty !== null && home_penalty !== undefined && away_penalty !== null && away_penalty !== undefined;
+
+  // Picks the Fluent message + args used to translate the row's aria-label.
+  // We pick a separate Fluent ID per sub-case (penalty shootout for results,
+  // non-scheduled status for upcoming) instead of using Fluent selectors, so
+  // translators see complete sentences and the strings are independently
+  // translatable.
+  function getAriaLabelL10n() {
+    const teams = {
+      homeTeam: home_team.name,
+      awayTeam: away_team.name
+    };
+    if (variant === "results") {
+      if (hasPenalties) {
+        return {
+          id: "newtab-sports-widget-match-aria-label-results-penalties",
+          args: {
+            ...teams,
+            homeScore: displayHomeScore,
+            awayScore: displayAwayScore,
+            homePenalty: home_penalty,
+            awayPenalty: away_penalty
+          }
+        };
+      }
+      return {
+        id: "newtab-sports-widget-match-aria-label-results",
+        args: {
+          ...teams,
+          homeScore: displayHomeScore,
+          awayScore: displayAwayScore
+        }
+      };
+    }
+    if (variant === "now") {
+      return {
+        id: "newtab-sports-widget-match-aria-label-now",
+        args: {
+          ...teams,
+          homeScore: displayHomeScore,
+          awayScore: displayAwayScore
+        }
+      };
+    }
+    // Upcoming. Non-scheduled statuses use a per-status Fluent ID; the
+    // default ("scheduled") announces kickoff time/date.
+    const upcomingId = UPCOMING_STATUS_ARIA_L10N_MAP[status_type] || "newtab-sports-widget-match-aria-label-upcoming";
+    return {
+      id: upcomingId,
+      args: {
+        ...teams,
+        date: dateTimestamp
+      }
+    };
+  }
+  const ariaLabelL10n = getAriaLabelL10n();
+  function renderMiddle() {
+    switch (variant) {
+      case "now":
+        return /*#__PURE__*/external_React_default().createElement(ScorePill, {
+          homeScore: displayHomeScore,
+          awayScore: displayAwayScore,
+          variant: "now"
+        });
+      case "results":
+        {
+          return /*#__PURE__*/external_React_default().createElement("div", {
+            className: "sports-match-result"
+          }, /*#__PURE__*/external_React_default().createElement(ScorePill, {
+            homeScore: displayHomeScore,
+            awayScore: displayAwayScore,
+            homePenalty: home_penalty,
+            awayPenalty: away_penalty,
+            variant: "results"
+          }), /*#__PURE__*/external_React_default().createElement("div", {
+            className: "sports-match-result-footer"
+          }, /*#__PURE__*/external_React_default().createElement("span", {
+            "data-l10n-id": "newtab-sports-widget-match-full-time"
+          }), hasPenalties && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("span", {
+            "aria-hidden": "true"
+          }, "\u2022"), /*#__PURE__*/external_React_default().createElement("span", {
+            "data-l10n-id": "newtab-sports-widget-match-penalties"
+          }))));
+        }
+      // Default is the upcoming variant
+      default:
+        {
+          const statusL10nId = STATUS_L10N_MAP[status_type];
+          const dateArgs = JSON.stringify({
+            date: dateTimestamp
+          });
+          return /*#__PURE__*/external_React_default().createElement("div", {
+            className: "sports-match-upcoming"
+          }, /*#__PURE__*/external_React_default().createElement("span", {
+            className: "sports-match-time",
+            "data-l10n-id": "newtab-sports-widget-match-time",
+            "data-l10n-args": dateArgs
+          }), statusL10nId ? /*#__PURE__*/external_React_default().createElement("span", {
+            className: "sports-widget-match-status",
+            "data-l10n-id": statusL10nId
+          }) : /*#__PURE__*/external_React_default().createElement("span", {
+            className: "sports-match-date",
+            "data-l10n-id": "newtab-sports-widget-key-date",
+            "data-l10n-args": dateArgs
+          }));
+        }
+    }
+  }
+
+  // Hand the click off to the main process, which calls
+  // SearchUIUtils.loadSearch to resolve the user's default engine, navigate
+  // (handling POST + private windows), and record SAP telemetry. We also
+  // dispatch a WIDGETS_USER_EVENT so newtab-side telemetry can attribute
+  // the click to the right tab variant + widget size.
+  function openMatchSearch(event) {
+    if (!query) {
+      return;
+    }
+    event.preventDefault();
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WIDGETS_USER_EVENT,
+      data: {
+        widget_name: "sports",
+        widget_source: variant,
+        user_action: "open_match_search",
+        widget_size: widgetSize
+      }
+    }));
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WIDGETS_SPORTS_OPEN_MATCH_SEARCH,
+      data: {
+        query,
+        eventInfo: {
+          button: event.button,
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          altKey: event.altKey
+        }
+      }
+    }));
+    handleInteraction?.();
+  }
+  function onKeyDown(event) {
+    // Anchor without an href doesn't fire click on Enter/Space, so wire it
+    // up manually to keep keyboard activation working.
+    if (event.key === "Enter" || event.key === " ") {
+      openMatchSearch(event);
+    }
+  }
+  const clickable = !!query;
+  return /*#__PURE__*/external_React_default().createElement("a", SportsMatchRow_extends({
+    className: `sports-match-row sports-match-row-${size}${clickable ? " clickable" : ""}`,
+    "data-l10n-id": ariaLabelL10n.id,
+    "data-l10n-args": JSON.stringify(ariaLabelL10n.args)
+  }, clickable && {
+    role: "link",
+    tabIndex: 0,
+    onClick: openMatchSearch,
+    onKeyDown
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-match-team"
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    className: `sports-match-flag-wrapper${isHomeFollowed ? " is-followed" : ""}`
+  }, /*#__PURE__*/external_React_default().createElement("img", {
+    className: "sports-match-flag",
+    src: home_team.icon_url,
+    alt: home_team.name,
+    title: home_team.name
+  }), isHomeFollowed && /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-match-flag-check",
+    "aria-hidden": "true"
+  })), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-match-code"
+  }, isHomeFollowed ? /*#__PURE__*/external_React_default().createElement("strong", null, home_team.key) : home_team.key)), renderMiddle(), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-match-team"
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    className: `sports-match-flag-wrapper${isAwayFollowed ? " is-followed" : ""}`
+  }, /*#__PURE__*/external_React_default().createElement("img", {
+    className: "sports-match-flag",
+    src: away_team.icon_url,
+    alt: away_team.name,
+    title: away_team.name
+  }), isAwayFollowed && /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-match-flag-check",
+    "aria-hidden": "true"
+  })), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-match-code"
+  }, isAwayFollowed ? /*#__PURE__*/external_React_default().createElement("strong", null, away_team.key) : away_team.key)));
+}
+
+;// CONCATENATED MODULE: ./content-src/components/Widgets/SportsWidget/teamRegions.mjs
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+// FIFA team code to ISO 3166-1 alpha-2 region code accepted by
+// Intl.DisplayNames. Covers the 43 qualified 2026 World Cup teams not
+// in FLUENT_OVERRIDE_KEYS (see useLocalizedTeamNames.jsx). Teams Merino
+// sends that are in neither map fall back to team.name.
+const TEAM_REGION_CODES = {
+  ALG: "DZ",
+  ARG: "AR",
+  AUS: "AU",
+  AUT: "AT",
+  BEL: "BE",
+  BRA: "BR",
+  CAN: "CA",
+  COL: "CO",
+  CPV: "CV",
+  CRO: "HR",
+  CUW: "CW",
+  CZE: "CZ",
+  ECU: "EC",
+  EGY: "EG",
+  ESP: "ES",
+  FRA: "FR",
+  GER: "DE",
+  GHA: "GH",
+  HAI: "HT",
+  IRN: "IR",
+  IRQ: "IQ",
+  JOR: "JO",
+  JPN: "JP",
+  KOR: "KR",
+  KSA: "SA",
+  MAR: "MA",
+  MEX: "MX",
+  NED: "NL",
+  NOR: "NO",
+  NZL: "NZ",
+  PAN: "PA",
+  PAR: "PY",
+  POR: "PT",
+  QAT: "QA",
+  RSA: "ZA",
+  SEN: "SN",
+  SUI: "CH",
+  SWE: "SE",
+  TUN: "TN",
+  TUR: "TR",
+  URU: "UY",
+  USA: "US",
+  UZB: "UZ",
+};
+
+;// CONCATENATED MODULE: ./content-src/components/Widgets/SportsWidget/useLocalizedTeamNames.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+// FIFA team codes whose localized names must come from Fluent because
+// Intl.DisplayNames cannot produce a usable result: England and Scotland
+// have no ISO 3166-1 code, and Bosnia and Herzegovina / Ivory Coast /
+// DR Congo differ in wording from what UX wants to show.
+const FLUENT_OVERRIDE_KEYS = new Set(["BIH", "CIV", "COD", "ENG", "SCO"]);
+
+/**
+ * Resolves localized country names for `teams`. Returns `null` until
+ * the current `teams` reference is resolved, then an object mapping
+ * FIFA code to localized name. Resets to `null` on `teams` change so
+ * callers can't read stale entries during sort or filter.
+ */
+function useLocalizedTeamNames(teams) {
+  const [resolved, setResolved] = (0,external_React_namespaceObject.useState)({
+    teams: null,
+    names: null
+  });
+  (0,external_React_namespaceObject.useEffect)(() => {
+    let cancelled = false;
+    async function resolveNames() {
+      const overrideKeys = teams.map(team => team.key).filter(key => FLUENT_OVERRIDE_KEYS.has(key));
+
+      // The override strings ship as attribute-only Fluent messages
+      // (`.label = ...`), so we use formatMessages and read the label
+      // attribute rather than formatValues (which would return null).
+      const messages = overrideKeys.length ? await document.l10n.formatMessages(overrideKeys.map(key => ({
+        id: `newtab-sports-widget-team-name-label-${key.toLowerCase()}`
+      }))) : [];
+      if (cancelled) {
+        return;
+      }
+      const overrideValues = new Map(overrideKeys.map((key, i) => [key, messages[i]?.attributes?.find(attr => attr.name === "label")?.value]));
+      const displayNames = new Intl.DisplayNames(undefined, {
+        type: "region"
+      });
+      const names = {};
+      for (const team of teams) {
+        if (FLUENT_OVERRIDE_KEYS.has(team.key)) {
+          names[team.key] = overrideValues.get(team.key) || team.name;
+        } else if (TEAM_REGION_CODES[team.key]) {
+          names[team.key] = displayNames.of(TEAM_REGION_CODES[team.key]) || team.name;
+        } else {
+          names[team.key] = team.name;
+        }
+      }
+      setResolved({
+        teams,
+        names
+      });
+    }
+    resolveNames();
+    return () => {
+      cancelled = true;
+    };
+  }, [teams]);
+
+  // Only expose names that match the current `teams` reference.
+  return resolved.teams === teams ? resolved.names : null;
+}
+;// CONCATENATED MODULE: ./content-src/components/Widgets/SportsWidget/stageLabels.mjs
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+// Merino sends the literal string "Group Stage" for matches in the
+// group phase; any other value signals a knockout stage.
+const GROUP_STAGE_LABEL = "Group Stage";
+
+// Map from the literal `match.stage` string Merino sends for each
+// knockout phase to the corresponding Fluent message ID. Expected
+// spellings, not yet observed in production (tournament hasn't reached
+// knockouts at time of writing).
+const KNOCKOUT_STAGE_L10N_IDS = {
+  "Round of 32": "newtab-sports-widget-round-32",
+  "Round of 16": "newtab-sports-widget-round-16",
+  "Quarter-finals": "newtab-sports-widget-quarter-finals",
+  "Semi-finals": "newtab-sports-widget-semi-finals",
+  "Bronze Final": "newtab-sports-widget-bronze-finals",
+  Final: "newtab-sports-widget-final",
+};
+
+/**
+ * Resolves a match to a Fluent ID for its section label.
+ *
+ * Group phase: derives the ID from the team's group letter, e.g.
+ * a match in "Group A" yields newtab-sports-widget-group-a.
+ *
+ * Knockout phase: looks up `match.stage` in KNOCKOUT_STAGE_L10N_IDS.
+ *
+ * Returns `null` when the input doesn't match any known shape so
+ * callers can fall back to raw `match.stage` text. Warns on each
+ * unmapped value so unexpected backend data is visible in the console.
+ */
+function getMatchSectionL10nId(match) {
+  if (match?.stage === GROUP_STAGE_LABEL) {
+    const groupString = match.home_team?.group || match.away_team?.group;
+    const lastChar = groupString?.trim().slice(-1).toLowerCase();
+    if (lastChar && lastChar >= "a" && lastChar <= "l") {
+      return `newtab-sports-widget-group-${lastChar}`;
+    }
+    console.warn(
+      `Sports widget: malformed team.group=${JSON.stringify(groupString)}; falling back to raw text.`
+    );
+    return null;
+  }
+  const id = KNOCKOUT_STAGE_L10N_IDS[match?.stage];
+  if (!id && match?.stage) {
+    console.warn(
+      `Sports widget: unmapped match.stage=${JSON.stringify(match.stage)}; falling back to raw text.`
+    );
+  }
+  return id ?? null;
+}
+
+/**
+ * Returns the key used to group consecutive matches into a single
+ * section: the full team group string ("Group A") for group stage,
+ * or the raw `match.stage` value otherwise.
+ */
+function getMatchSectionKey(match) {
+  if (match?.stage === GROUP_STAGE_LABEL) {
+    return match.home_team?.group || match.away_team?.group || match.stage;
+  }
+  return match?.stage;
+}
+
+/**
+ * Groups a flat list of matches into ordered sections, preserving the
+ * input order. Consecutive matches sharing the same section key go
+ * under one section; if the same key reappears later it gets a new
+ * section (we do not re-sort).
+ */
+function groupMatchesBySection(matches) {
+  const sections = [];
+  for (const match of matches) {
+    const key = getMatchSectionKey(match);
+    const last = sections[sections.length - 1];
+    if (last && last.key === key) {
+      last.matches.push(match);
+    } else {
+      sections.push({ key, matches: [match] });
+    }
+  }
+  return sections;
+}
+
 ;// CONCATENATED MODULE: ./content-src/components/Widgets/SportsWidget/SportsWidget.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -15802,67 +16433,197 @@ function WidgetsRowFeatureHighlight({
 
 
 
+
+
+
+
+
 const WIDGET_STATES = {
   INTRO: "sports-intro",
-  FOLLOW_TEAMS: "sports-follow-state"
+  FOLLOW_TEAMS: "sports-follow-state",
+  MATCHES: "sports-matches",
+  KEY_DATES: "sports-key-dates"
 };
-const COUNTRIES = [{
-  id: "CA",
-  name: "Canada"
-}, {
-  id: "AU",
-  name: "Australia"
-}, {
-  id: "DZ",
-  name: "Algeria"
-}, {
-  id: "IQ",
-  name: "Iraq"
-}, {
-  id: "IT",
-  name: "Italy"
-}, {
-  id: "ES",
-  name: "Spain"
-}, {
-  id: "NG",
-  name: "Nigeria"
-}, {
-  id: "MR",
-  name: "Morocco"
-}, {
-  id: "PT",
-  name: "Portugal"
-}, {
-  id: "DE",
-  name: "Germany"
-}, {
-  id: "SN",
-  name: "Senegal"
-}];
+const MATCHES_TABS = {
+  RESULTS: "results",
+  NOW: "now",
+  UPCOMING: "upcoming"
+};
+function getVisibleMatchesTabs(hasLiveGames, hasPreviousResults) {
+  return Object.values(MATCHES_TABS)
+  // Only show the Now tab when there are live games.
+  .filter(id => id !== MATCHES_TABS.NOW || hasLiveGames).map(id => ({
+    id,
+    // Disable the Results tab until previous match data is available.
+    disabled: id === MATCHES_TABS.RESULTS && !hasPreviousResults
+  }));
+}
 const SportsWidget_USER_ACTION_TYPES = {
   FOLLOW_TEAMS: "follow_teams",
+  SAVE_TEAMS: "save_teams",
   VIEW_UPCOMING: "view_upcoming",
   VIEW_RESULTS: "view_results",
-  VIEW_SCHEDULE: "view_schedule",
+  VIEW_MATCHES: "view_matches",
+  VIEW_KEY_DATES: "view_key_dates",
   CHANGE_SIZE: "change_size",
-  LEARN_MORE: "learn_more"
+  CHANGE_TAB: "change_tab",
+  LEARN_MORE: "learn_more",
+  TOGGLE_FOLLOWED_ONLY: "toggle_followed_only"
 };
 const SportsWidget_PREF_NOVA_ENABLED = "nova.enabled";
 const SportsWidget_PREF_SPORTS_WIDGET_SIZE = "widgets.sportsWidget.size";
 const PREF_SPORTS_WIDGET_LIVE_ENABLED = "widgets.sportsWidget.live.enabled";
+const SPORTS_WIDGET_REGISTRY_ENTRY = WIDGET_REGISTRY.find(widget => widget.id === "sportsWidget");
+
+// Stable sort that bubbles matches involving a followed team to the front
+// while preserving the original chronological order otherwise.
+function sortFollowedFirst(matches, selectedTeamsSet) {
+  if (!selectedTeamsSet.size) {
+    return matches;
+  }
+  const involvesFollowed = match => selectedTeamsSet.has(match.home_team.key) || selectedTeamsSet.has(match.away_team.key);
+  return [...matches].map((match, index) => ({
+    match,
+    index
+  })).sort((a, b) => {
+    const aFollowed = involvesFollowed(a.match) ? 1 : 0;
+    const bFollowed = involvesFollowed(b.match) ? 1 : 0;
+    if (aFollowed !== bFollowed) {
+      return bFollowed - aFollowed;
+    }
+    return a.index - b.index;
+  }).map(entry => entry.match);
+}
+
+// Returns the match shown in the highlight view for the active tab, or null
+// when the user has expanded a list view (no highlight is visible then).
+function getHighlightMatch({
+  widgetState,
+  activeTab,
+  showResultsList,
+  showUpcomingList,
+  sortedPrevious,
+  sortedCurrent,
+  sortedNext
+}) {
+  if (widgetState !== WIDGET_STATES.MATCHES) {
+    return null;
+  }
+  if (activeTab === MATCHES_TABS.RESULTS && !showResultsList) {
+    return sortedPrevious[0] || null;
+  }
+  if (activeTab === MATCHES_TABS.NOW) {
+    return sortedCurrent[0] || null;
+  }
+  if (activeTab === MATCHES_TABS.UPCOMING && !showUpcomingList) {
+    return sortedNext[0] || null;
+  }
+  return null;
+}
+
+// Builds a CSS gradient string from the followed team's `colors` palette in
+// the highlight state. The gradient doesn't show when both teams in the match
+// are followed or when neither team is followed.
+function getFollowedGradient(match, selectedTeamsSet, teamColorsByKey) {
+  if (!match) {
+    return null;
+  }
+  const homeFollowed = selectedTeamsSet.has(match.home_team.key);
+  const awayFollowed = selectedTeamsSet.has(match.away_team.key);
+  if (homeFollowed === awayFollowed) {
+    return null;
+  }
+  const followedKey = homeFollowed ? match.home_team.key : match.away_team.key;
+  const colors = teamColorsByKey.get(followedKey);
+  if (!colors || colors.length < 2) {
+    return null;
+  }
+  return `linear-gradient(to right, ${colors.join(", ")})`;
+}
 function SportsWidget_SportsWidget({
   dispatch,
-  handleUserInteraction
+  handleUserInteraction,
+  widgetEnabledMap
 }) {
   const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
   const sportsWidgetData = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.SportsWidget);
-  const widgetSize = prefs[SportsWidget_PREF_SPORTS_WIDGET_SIZE] || "medium";
+  const widgetSize = resolveWidgetSize(SPORTS_WIDGET_REGISTRY_ENTRY, prefs);
   const liveEnabled = prefs[PREF_SPORTS_WIDGET_LIVE_ENABLED];
   const widgetsMayBeMaximized = prefs["widgets.system.maximized"];
-  const widgetState = sportsWidgetData.widgetState || WIDGET_STATES.INTRO;
+  const hasLiveGames = sportsWidgetData?.data?.matches?.current?.length > 0;
+  const hasPreviousResults = sportsWidgetData?.data?.matches?.previous?.length > 0;
+  const tournamentStarted = hasLiveGames || hasPreviousResults;
+  const savedWidgetState = sportsWidgetData.widgetState || WIDGET_STATES.INTRO;
+  // Once the tournament has started, skip the intro and open on the match schedule.
+  const widgetState = tournamentStarted && savedWidgetState === WIDGET_STATES.INTRO ? WIDGET_STATES.MATCHES : savedWidgetState;
   const displaySize = widgetState === WIDGET_STATES.FOLLOW_TEAMS ? "large" : widgetSize;
-  const selectedTeams = sportsWidgetData.selectedTeams || [];
+  const rawSelectedTeams = sportsWidgetData.selectedTeams;
+  const rawTeams = sportsWidgetData?.data?.teams;
+  const rawMatches = sportsWidgetData?.data?.matches;
+  const selectedTeams = (0,external_React_namespaceObject.useMemo)(() => rawSelectedTeams || [], [rawSelectedTeams]);
+  const teams = (0,external_React_namespaceObject.useMemo)(() => rawTeams ?? [], [rawTeams]);
+  const {
+    matchesTab
+  } = sportsWidgetData;
+  const hasUserSelectedTab = (0,external_React_namespaceObject.useRef)(false);
+  const activeTab = hasLiveGames && !hasUserSelectedTab.current ? MATCHES_TABS.NOW : matchesTab;
+
+  // Set of followed team keys that are still in the tournament. Eliminated
+  // teams drop out so the rest of the UI (toggle, bubble-to-front sort,
+  // gradient border, per-row check/bold) behaves as if the user weren't
+  // following them anymore. The raw `selectedTeams` array is kept intact for
+  // the Follow Teams editor so users still see their original selection when
+  // re-opening it.
+  const selectedTeamsSet = (0,external_React_namespaceObject.useMemo)(() => {
+    const eliminated = new Set();
+    for (const team of teams) {
+      if (team.eliminated) {
+        eliminated.add(team.key);
+      }
+    }
+    return new Set(selectedTeams.filter(key => !eliminated.has(key)));
+  }, [selectedTeams, teams]);
+  // Map of team key -> colors[] for looking up the gradient palette of a
+  // followed team in the currently-highlighted match.
+  const teamColorsByKey = (0,external_React_namespaceObject.useMemo)(() => {
+    const map = new Map();
+    for (const team of teams) {
+      if (Array.isArray(team.colors) && team.colors.length) {
+        map.set(team.key, team.colors);
+      }
+    }
+    return map;
+  }, [teams]);
+
+  // Pre-sort each match bucket so followed teams' matches bubble to the front
+  // for the highlight view and the list view.
+  const {
+    sortedPrevious,
+    sortedCurrent,
+    sortedNext
+  } = (0,external_React_namespaceObject.useMemo)(() => {
+    return {
+      sortedPrevious: sortFollowedFirst(rawMatches?.previous ?? [], selectedTeamsSet),
+      sortedCurrent: sortFollowedFirst(rawMatches?.current ?? [], selectedTeamsSet),
+      sortedNext: sortFollowedFirst(rawMatches?.next ?? [], selectedTeamsSet)
+    };
+  }, [rawMatches, selectedTeamsSet]);
+
+  // List-view toggle states for the Results and Upcoming tabs are lifted up
+  // here so we can tell whether a highlight match is currently visible (for
+  // applying the followed-team gradient on the article wrapper).
+  const [showResultsList, setShowResultsList] = (0,external_React_namespaceObject.useState)(false);
+  const [showUpcomingList, setShowUpcomingList] = (0,external_React_namespaceObject.useState)(false);
+  const highlightMatch = getHighlightMatch({
+    widgetState,
+    activeTab,
+    showResultsList,
+    showUpcomingList,
+    sortedPrevious,
+    sortedCurrent,
+    sortedNext
+  });
+  const followedGradient = getFollowedGradient(highlightMatch, selectedTeamsSet, teamColorsByKey);
   const impressionFired = (0,external_React_namespaceObject.useRef)(false);
   const sizeSubmenuRef = (0,external_React_namespaceObject.useRef)(null);
   const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
@@ -15873,7 +16634,7 @@ function SportsWidget_SportsWidget({
     dispatch(actionCreators.AlsoToMain({
       type: actionTypes.WIDGETS_IMPRESSION,
       data: {
-        widget_name: "sports_widget",
+        widget_name: "sports",
         widget_size: widgetSize
       }
     }));
@@ -15884,7 +16645,7 @@ function SportsWidget_SportsWidget({
     dispatch(actionCreators.OnlyToMain({
       type: actionTypes.WIDGETS_USER_EVENT,
       data: {
-        widget_name: "sports_widget",
+        widget_name: "sports",
         widget_source: widgetSource,
         user_action: SportsWidget_USER_ACTION_TYPES.FOLLOW_TEAMS,
         widget_size: widgetSize
@@ -15902,11 +16663,19 @@ function SportsWidget_SportsWidget({
       dispatch(actionCreators.OnlyToMain({
         type: actionTypes.WIDGETS_USER_EVENT,
         data: {
-          widget_name: "sports_widget",
+          widget_name: "sports",
           widget_source: "context_menu",
           user_action: SportsWidget_USER_ACTION_TYPES.VIEW_UPCOMING,
           widget_size: widgetSize
         }
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+        data: WIDGET_STATES.MATCHES
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+        data: MATCHES_TABS.UPCOMING
       }));
     });
     handleInteraction();
@@ -15916,11 +16685,37 @@ function SportsWidget_SportsWidget({
       dispatch(actionCreators.OnlyToMain({
         type: actionTypes.WIDGETS_USER_EVENT,
         data: {
-          widget_name: "sports_widget",
+          widget_name: "sports",
           widget_source: "context_menu",
           user_action: SportsWidget_USER_ACTION_TYPES.VIEW_RESULTS,
           widget_size: widgetSize
         }
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+        data: WIDGET_STATES.MATCHES
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+        data: MATCHES_TABS.RESULTS
+      }));
+    });
+    handleInteraction();
+  }
+  function handleViewKeyDates(widgetSource) {
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_USER_EVENT,
+        data: {
+          widget_name: "sports",
+          widget_source: widgetSource,
+          user_action: SportsWidget_USER_ACTION_TYPES.VIEW_KEY_DATES,
+          widget_size: widgetSize
+        }
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+        data: WIDGET_STATES.KEY_DATES
       }));
     });
     handleInteraction();
@@ -15937,7 +16732,7 @@ function SportsWidget_SportsWidget({
       dispatch(actionCreators.OnlyToMain({
         type: actionTypes.WIDGETS_ENABLED,
         data: {
-          widget_name: "sports_widget",
+          widget_name: "sports",
           widget_source: "context_menu",
           enabled: false,
           widget_size: widgetSize
@@ -15958,7 +16753,7 @@ function SportsWidget_SportsWidget({
       dispatch(actionCreators.OnlyToMain({
         type: actionTypes.WIDGETS_USER_EVENT,
         data: {
-          widget_name: "sports_widget",
+          widget_name: "sports",
           widget_source: "context_menu",
           user_action: SportsWidget_USER_ACTION_TYPES.CHANGE_SIZE,
           action_value: size,
@@ -15981,16 +16776,22 @@ function SportsWidget_SportsWidget({
     el.addEventListener("click", listener);
     return () => el.removeEventListener("click", listener);
   }, [handleChangeSize]);
-  function handleViewSchedule() {
-    dispatch(actionCreators.OnlyToMain({
-      type: actionTypes.WIDGETS_USER_EVENT,
-      data: {
-        widget_name: "sports_widget",
-        widget_source: "widget",
-        user_action: SportsWidget_USER_ACTION_TYPES.VIEW_SCHEDULE,
-        widget_size: widgetSize
-      }
-    }));
+  function handleViewMatches(widgetSource) {
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_USER_EVENT,
+        data: {
+          widget_name: "sports",
+          widget_source: widgetSource,
+          user_action: SportsWidget_USER_ACTION_TYPES.VIEW_MATCHES,
+          widget_size: widgetSize
+        }
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+        data: WIDGET_STATES.MATCHES
+      }));
+    });
     handleInteraction();
   }
   function handleLearnMore() {
@@ -16002,7 +16803,7 @@ function SportsWidget_SportsWidget({
         }
       }));
       const telemetryData = {
-        widget_name: "sports_widget",
+        widget_name: "sports",
         widget_source: "context_menu",
         user_action: SportsWidget_USER_ACTION_TYPES.LEARN_MORE,
         widget_size: widgetSize
@@ -16019,13 +16820,61 @@ function SportsWidget_SportsWidget({
     type: actionTypes.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
     data: WIDGET_STATES.INTRO
   })), [dispatch]);
+  const handleSaveSelection = (0,external_React_namespaceObject.useCallback)(newSelectedTeams => {
+    if (newSelectedTeams.length) {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_USER_EVENT,
+        data: {
+          widget_name: "sports",
+          widget_source: "widget",
+          user_action: SportsWidget_USER_ACTION_TYPES.SAVE_TEAMS,
+          action_value: newSelectedTeams.length,
+          widget_size: widgetSize
+        }
+      }));
+    }
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.WIDGETS_SPORTS_CHANGE_SELECTED_TEAMS,
+      data: newSelectedTeams
+    }));
+    handleCancelSelection();
+  }, [dispatch, widgetSize, handleCancelSelection]);
+  const handleViewIntro = (0,external_React_namespaceObject.useCallback)(() => dispatch(actionCreators.AlsoToMain({
+    type: actionTypes.WIDGETS_SPORTS_CHANGE_WIDGET_STATE,
+    data: WIDGET_STATES.INTRO
+  })), [dispatch]);
+  const handleMatchesTabChange = (0,external_React_namespaceObject.useCallback)(tab => {
+    if (tab === activeTab) {
+      return;
+    }
+    hasUserSelectedTab.current = true;
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_USER_EVENT,
+        data: {
+          widget_name: "sports",
+          widget_source: "widget",
+          user_action: SportsWidget_USER_ACTION_TYPES.CHANGE_TAB,
+          action_value: tab,
+          widget_size: widgetSize
+        }
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_SPORTS_CHANGE_MATCHES_TAB,
+        data: tab
+      }));
+    });
+  }, [dispatch, widgetSize, activeTab]);
 
   // @nova-cleanup(remove-gate): Remove this guard and PREF_NOVA_ENABLED after Nova ships
   if (!prefs[SportsWidget_PREF_NOVA_ENABLED]) {
     return null;
   }
   return /*#__PURE__*/external_React_default().createElement("article", {
-    className: `sports widget col-4 ${displaySize}-widget ${widgetState}`,
+    className: `sports widget col-4 ${displaySize}-widget ${widgetState}${followedGradient ? " is-followed-highlight" : ""}`,
+    style: followedGradient ? {
+      "--sports-followed-gradient": followedGradient
+    } : undefined,
     ref: el => {
       widgetRef.current = [el];
     }
@@ -16039,7 +16888,39 @@ function SportsWidget_SportsWidget({
     "data-l10n-args": JSON.stringify({
       number: 3
     })
-  }), widgetState === WIDGET_STATES.INTRO && /*#__PURE__*/external_React_default().createElement("div", {
+  }), widgetState === WIDGET_STATES.MATCHES && /*#__PURE__*/external_React_default().createElement("moz-button", {
+    className: "sports-back-button",
+    type: "icon ghost",
+    iconsrc: "chrome://global/skin/icons/arrow-left.svg",
+    "data-l10n-id": "newtab-sports-widget-back-button",
+    onClick: handleViewIntro,
+    style: {
+      visibility: tournamentStarted ? "hidden" : "visible"
+    },
+    "aria-hidden": tournamentStarted
+  }), widgetState === WIDGET_STATES.MATCHES && /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-matches-tabs",
+    role: "tablist"
+  }, getVisibleMatchesTabs(hasLiveGames, hasPreviousResults).map(({
+    id,
+    disabled
+  }) => /*#__PURE__*/external_React_default().createElement("button", {
+    key: id,
+    role: "tab",
+    "aria-selected": activeTab === id,
+    disabled: disabled,
+    className: `sports-matches-tab${activeTab === id ? " is-active" : ""}${disabled ? " is-disabled" : ""}`,
+    onClick: () => handleMatchesTabChange(id),
+    "data-l10n-id": `newtab-sports-widget-${id}`
+  }))), widgetState === WIDGET_STATES.KEY_DATES && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("moz-button", {
+    className: "sports-back-button",
+    type: "icon ghost",
+    iconsrc: "chrome://global/skin/icons/arrow-left.svg",
+    "data-l10n-id": "newtab-sports-widget-back-button",
+    onClick: handleViewIntro
+  }), /*#__PURE__*/external_React_default().createElement("h3", {
+    "data-l10n-id": "newtab-sports-widget-key-dates"
+  })), widgetState === WIDGET_STATES.INTRO && /*#__PURE__*/external_React_default().createElement("div", {
     className: "sports-intro-wrapper"
   }, /*#__PURE__*/external_React_default().createElement("h2", {
     className: "sports-intro-title",
@@ -16064,11 +16945,15 @@ function SportsWidget_SportsWidget({
     "data-l10n-id": "newtab-sports-widget-menu-follow-teams",
     onClick: () => handleFollowTeams("context_menu")
   }), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-sports-widget-menu-view-schedule",
+    onClick: () => handleViewKeyDates("context_menu")
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
     "data-l10n-id": "newtab-sports-widget-menu-view-upcoming",
     onClick: handleViewUpcoming
   }), /*#__PURE__*/external_React_default().createElement("panel-item", {
     "data-l10n-id": "newtab-sports-widget-menu-view-results",
-    onClick: handleViewResults
+    onClick: handleViewResults,
+    disabled: !hasPreviousResults
   }), widgetsMayBeMaximized && /*#__PURE__*/external_React_default().createElement("panel-item", {
     submenu: "sports-size-submenu"
   }, /*#__PURE__*/external_React_default().createElement("span", {
@@ -16083,7 +16968,10 @@ function SportsWidget_SportsWidget({
     checked: widgetSize === size || undefined,
     "data-size": size,
     "data-l10n-id": `newtab-widget-size-${size}`
-  })))), /*#__PURE__*/external_React_default().createElement("panel-item", {
+  })))), /*#__PURE__*/external_React_default().createElement(MoveSubmenu, {
+    widgetId: "sportsWidget",
+    widgetEnabledMap: widgetEnabledMap
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
     "data-l10n-id": "newtab-widget-menu-hide",
     onClick: handleSportsWidgetHide
   }), /*#__PURE__*/external_React_default().createElement("panel-item", {
@@ -16091,18 +16979,35 @@ function SportsWidget_SportsWidget({
     onClick: handleLearnMore
   })))), /*#__PURE__*/external_React_default().createElement("div", {
     className: "sports-body"
-  }, widgetState === WIDGET_STATES.FOLLOW_TEAMS ? /*#__PURE__*/external_React_default().createElement(SportsWidgetFollowTeams, {
+  }, widgetState === WIDGET_STATES.FOLLOW_TEAMS && /*#__PURE__*/external_React_default().createElement(SportsWidgetFollowTeams, {
+    teams: teams,
     initialSelectedTeams: selectedTeams,
+    onSave: handleSaveSelection
+  }), widgetState === WIDGET_STATES.MATCHES && /*#__PURE__*/external_React_default().createElement(SportsMatchesView, {
     dispatch: dispatch,
-    onClose: handleCancelSelection
-  }) : /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("div", {
+    matchesTab: activeTab,
+    hasLiveGames: hasLiveGames,
+    size: widgetSize,
+    previous: sortedPrevious,
+    current: sortedCurrent,
+    next: sortedNext,
+    handleInteraction: handleInteraction,
+    selectedTeamsSet: selectedTeamsSet,
+    followedOnly: sportsWidgetData.followedOnly,
+    showResultsList: showResultsList,
+    setShowResultsList: setShowResultsList,
+    showUpcomingList: showUpcomingList,
+    setShowUpcomingList: setShowUpcomingList
+  }), widgetState === WIDGET_STATES.KEY_DATES && /*#__PURE__*/external_React_default().createElement(SportsWidgetKeyDates, {
+    handleViewMatches: handleViewMatches
+  }), widgetState === WIDGET_STATES.INTRO && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("div", {
     className: "sports-buttons-wrapper"
   }, /*#__PURE__*/external_React_default().createElement("moz-button", {
     type: "primary",
     size: widgetSize === "medium" ? "small" : undefined,
-    "data-l10n-id": "newtab-sports-widget-view-schedule",
-    className: "sports-view-schedule",
-    onClick: handleViewSchedule
+    "data-l10n-id": "newtab-sports-widget-view-matches",
+    className: "sports-view-matches",
+    onClick: () => handleViewMatches("widget")
   }), /*#__PURE__*/external_React_default().createElement("moz-button", {
     type: "secondary",
     size: widgetSize === "medium" ? "small" : undefined,
@@ -16114,26 +17019,25 @@ function SportsWidget_SportsWidget({
   }))));
 }
 function SportsWidgetFollowTeams({
-  onClose,
+  teams,
   initialSelectedTeams,
-  dispatch
+  onSave
 }) {
   const [selectedTeams, setSelectedTeams] = (0,external_React_namespaceObject.useState)(initialSelectedTeams);
   const [searchQuery, setSearchQuery] = (0,external_React_namespaceObject.useState)("");
-  const isMaxSelected = selectedTeams.length >= 3;
-  const filteredCountries = searchQuery ? COUNTRIES.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase())) : COUNTRIES;
-  function handleCountryToggle(countryId, isChecked) {
-    setSelectedTeams(prev => isChecked ? [...prev, countryId] : prev.filter(id => id !== countryId));
+  const localizedNames = useLocalizedTeamNames(teams);
+  // Eliminated teams stay in the list (shown disabled with an "(eliminated)"
+  // badge) but don't count toward the 3-team cap and aren't persisted on save
+  // — otherwise the user could be stuck following a team they can no longer
+  // toggle off, or blocked from picking a replacement.
+  const eliminatedKeys = new Set(teams.filter(team => team.eliminated).map(team => team.key));
+  const activeSelectedTeams = selectedTeams.filter(key => !eliminatedKeys.has(key));
+  const isMaxSelected = activeSelectedTeams.length >= 3;
+  function handleTeamToggle(teamKey, isChecked) {
+    setSelectedTeams(prev => isChecked ? [...prev, teamKey] : prev.filter(key => key !== teamKey));
   }
-
-  // Save the selected teams and go back to the intro state.
-  function handleDoneSelection() {
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.WIDGETS_SPORTS_CHANGE_SELECTED_TEAMS,
-      data: selectedTeams
-    }));
-    onClose();
-  }
+  const sortedTeams = localizedNames ? [...teams].sort((a, b) => localizedNames[a.key].localeCompare(localizedNames[b.key])) : [];
+  const filteredTeams = searchQuery ? sortedTeams.filter(team => localizedNames[team.key].toLocaleLowerCase().includes(searchQuery.toLocaleLowerCase())) : sortedTeams;
   return /*#__PURE__*/external_React_default().createElement("div", {
     className: "sports-follow-teams"
   }, /*#__PURE__*/external_React_default().createElement("moz-input-search", {
@@ -16142,21 +17046,308 @@ function SportsWidgetFollowTeams({
     onInput: e => setSearchQuery(e.target.value)
   }), /*#__PURE__*/external_React_default().createElement("div", {
     className: "sports-follow-teams-list"
-  }, filteredCountries.map(country => {
-    const isSelected = selectedTeams.includes(country.id);
-    return /*#__PURE__*/external_React_default().createElement("moz-checkbox", {
-      key: country.id,
-      label: country.name,
+  }, localizedNames && filteredTeams.map(team => {
+    const isSelected = selectedTeams.includes(team.key);
+    const isEliminated = eliminatedKeys.has(team.key);
+    const isRowDisabled = isEliminated || !isSelected && isMaxSelected;
+    const localizedName = localizedNames[team.key];
+    return /*#__PURE__*/external_React_default().createElement("div", {
+      key: team.key,
+      className: `sports-follow-teams-row${isRowDisabled ? " is-disabled" : ""}`,
+      onClick: e => {
+        // The checkbox already handles its own toggle; skip here so we don't toggle twice.
+        if (e.target.localName === "moz-checkbox") {
+          return;
+        }
+        if (isRowDisabled) {
+          return;
+        }
+        handleTeamToggle(team.key, !isSelected);
+      }
+    }, /*#__PURE__*/external_React_default().createElement("moz-checkbox", {
       checked: isSelected || undefined,
-      disabled: !isSelected && isMaxSelected ? true : undefined,
-      onChange: e => handleCountryToggle(country.id, e.target.checked)
-    });
+      disabled: isRowDisabled ? true : undefined,
+      onChange: e => handleTeamToggle(team.key, e.target.checked),
+      "aria-label": localizedName
+    }), /*#__PURE__*/external_React_default().createElement("img", {
+      className: "sports-team-flag",
+      src: team.icon_url,
+      alt: "",
+      title: localizedName
+    }), isEliminated ? /*#__PURE__*/external_React_default().createElement("span", {
+      className: "sports-team-name",
+      "data-l10n-id": "newtab-sports-widget-team-name-eliminated",
+      "data-l10n-args": JSON.stringify({
+        teamName: localizedName
+      })
+    }) : /*#__PURE__*/external_React_default().createElement("span", {
+      className: "sports-team-name"
+    }, localizedName));
   })), /*#__PURE__*/external_React_default().createElement("moz-button", {
     className: "sports-done-button",
     "data-l10n-id": "newtab-sports-widget-done-button",
     type: "primary",
     size: "small",
-    onClick: handleDoneSelection
+    onClick: () => onSave(activeSelectedTeams)
+  }));
+}
+function SportsSectionLabel({
+  match,
+  withLiveBadge = false
+}) {
+  const l10nId = getMatchSectionL10nId(match);
+  const stageContent = l10nId ? /*#__PURE__*/external_React_default().createElement("span", {
+    "data-l10n-id": l10nId
+  }) : /*#__PURE__*/external_React_default().createElement("span", null, match.stage);
+  if (!withLiveBadge) {
+    return /*#__PURE__*/external_React_default().createElement("span", {
+      className: "sports-section-label"
+    }, stageContent);
+  }
+  return /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-section-label"
+  }, stageContent, " ", /*#__PURE__*/external_React_default().createElement("span", {
+    className: "sports-section-label-live"
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    "aria-hidden": "true"
+  }, "• "), /*#__PURE__*/external_React_default().createElement("span", {
+    "data-l10n-id": "newtab-sports-widget-live"
+  })));
+}
+function SportsMatchesView({
+  dispatch,
+  matchesTab,
+  hasLiveGames,
+  size,
+  previous,
+  current,
+  next,
+  handleInteraction,
+  selectedTeamsSet,
+  followedOnly,
+  showResultsList,
+  setShowResultsList,
+  showUpcomingList,
+  setShowUpcomingList
+}) {
+  const resultsPanelRef = (0,external_React_namespaceObject.useRef)(null);
+  const upcomingPanelRef = (0,external_React_namespaceObject.useRef)(null);
+  const hasFollowedTeams = selectedTeamsSet.size > 0;
+  // Read the persisted per-tab toggle state from redux. Defaults to true so
+  // users with followed teams see the filtered list right away.
+  const resultsFollowedOnly = followedOnly?.results ?? true;
+  const upcomingFollowedOnly = followedOnly?.upcoming ?? true;
+  const setFollowedOnly = (tab, value) => (0,external_ReactRedux_namespaceObject.batch)(() => {
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WIDGETS_USER_EVENT,
+      data: {
+        widget_name: "sports",
+        // `widget_source` carries the originating tab (results/upcoming)
+        // since the toggle is rendered per-tab. `action_value` carries
+        // the new pressed state.
+        widget_source: tab,
+        user_action: SportsWidget_USER_ACTION_TYPES.TOGGLE_FOLLOWED_ONLY,
+        action_value: value,
+        widget_size: size
+      }
+    }));
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.WIDGETS_SPORTS_CHANGE_FOLLOWED_ONLY,
+      data: {
+        [tab]: value
+      }
+    }));
+  });
+  const filterFollowed = matches => matches.filter(match => selectedTeamsSet.has(match.home_team.key) || selectedTeamsSet.has(match.away_team.key));
+  // Filtering is only meaningful when the user has followed at least one
+  // team — otherwise we'd hide every match.
+  const displayedPrevious = hasFollowedTeams && resultsFollowedOnly ? filterFollowed(previous) : previous;
+  const displayedNext = hasFollowedTeams && upcomingFollowedOnly ? filterFollowed(next) : next;
+
+  // When the user expands a tab into list mode, move keyboard focus to the
+  // first match row in the just-revealed list. Without this, focus stays on
+  // the "View all" button, which sits at the bottom of the widget — pressing
+  // Tab from there moves focus *out* of the widget instead of into the new
+  // content, creating a keyboard trap for screen reader / keyboard users.
+  // We don't move focus when collapsing back to highlight view: focus
+  // naturally remains on the "Show less" button the user just activated,
+  // which is the expected behavior.
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (showResultsList) {
+      resultsPanelRef.current?.querySelector(".sports-match-row")?.focus();
+    }
+  }, [showResultsList]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (showUpcomingList) {
+      upcomingPanelRef.current?.querySelector(".sports-match-row")?.focus();
+    }
+  }, [showUpcomingList]);
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-matches-view"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-matches-tab-panel",
+    hidden: matchesTab !== MATCHES_TABS.RESULTS,
+    ref: resultsPanelRef
+  }, showResultsList ? /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, hasFollowedTeams &&
+  /*#__PURE__*/
+  /** @backward-compat { version 150 } React 16 (cached page) uses ontoggle; React 19 uses onToggle. Remove onToggle once Firefox 150 reaches Release. */
+  external_React_default().createElement("moz-toggle", {
+    className: "sports-followed-only-toggle",
+    pressed: resultsFollowedOnly || null,
+    "data-l10n-id": "newtab-sports-widget-followed-only-toggle",
+    ontoggle: e => setFollowedOnly("results", !!e.target.pressed),
+    onToggle: e => setFollowedOnly("results", !!e.target.pressed)
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-matches-list"
+  }, groupMatchesBySection(displayedPrevious).map((section, idx) => /*#__PURE__*/external_React_default().createElement("div", {
+    key: `${section.key}-${idx}`,
+    className: "sports-matches-list-section"
+  }, /*#__PURE__*/external_React_default().createElement(SportsSectionLabel, {
+    match: section.matches[0]
+  }), /*#__PURE__*/external_React_default().createElement("ul", null, section.matches.map(match => /*#__PURE__*/external_React_default().createElement("li", {
+    key: `${match.home_team.key}-${match.away_team.key}-${match.date}`
+  }, /*#__PURE__*/external_React_default().createElement(SportsMatchRow, {
+    match: match,
+    variant: "results",
+    size: "list",
+    handleInteraction: handleInteraction,
+    followedTeams: selectedTeamsSet
+  })))))))) : previous[0] && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, size === "large" && /*#__PURE__*/external_React_default().createElement(SportsSectionLabel, {
+    match: previous[0]
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "match-highlight-view"
+  }, /*#__PURE__*/external_React_default().createElement(SportsMatchRow, {
+    match: previous[0],
+    variant: "results",
+    size: size,
+    handleInteraction: handleInteraction,
+    followedTeams: selectedTeamsSet
+  }))), !!previous.length && /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: "secondary",
+    size: size === "medium" ? "small" : undefined,
+    "data-l10n-id": showResultsList ? "newtab-sports-widget-show-less" : "newtab-sports-widget-view-all",
+    onClick: () => setShowResultsList(v => !v)
+  })), hasLiveGames && /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-matches-tab-panel",
+    hidden: matchesTab !== MATCHES_TABS.NOW
+  }, current[0] && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, size === "large" && /*#__PURE__*/external_React_default().createElement(SportsSectionLabel, {
+    match: current[0],
+    withLiveBadge: true
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "match-highlight-view"
+  }, /*#__PURE__*/external_React_default().createElement(SportsMatchRow, {
+    match: current[0],
+    variant: "now",
+    size: size,
+    handleInteraction: handleInteraction,
+    followedTeams: selectedTeamsSet
+  })), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: size === "medium" ? "icon" : "default",
+    size: size === "medium" ? "small" : undefined,
+    iconSrc: "chrome://browser/skin/device-tv.svg",
+    "data-l10n-id": size === "medium" ? "newtab-sports-widget-watch-icon" : "newtab-sports-widget-watch"
+  }))), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-matches-tab-panel",
+    hidden: matchesTab !== MATCHES_TABS.UPCOMING,
+    ref: upcomingPanelRef
+  }, showUpcomingList ? /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, hasFollowedTeams &&
+  /*#__PURE__*/
+  /** @backward-compat { version 150 } React 16 (cached page) uses ontoggle; React 19 uses onToggle. Remove onToggle once Firefox 150 reaches Release. */
+  external_React_default().createElement("moz-toggle", {
+    className: "sports-followed-only-toggle",
+    pressed: upcomingFollowedOnly || null,
+    "data-l10n-id": "newtab-sports-widget-followed-only-toggle",
+    ontoggle: e => setFollowedOnly("upcoming", !!e.target.pressed),
+    onToggle: e => setFollowedOnly("upcoming", !!e.target.pressed)
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-matches-list"
+  }, groupMatchesBySection(displayedNext).map((section, idx) => /*#__PURE__*/external_React_default().createElement("div", {
+    key: `${section.key}-${idx}`,
+    className: "sports-matches-list-section"
+  }, /*#__PURE__*/external_React_default().createElement(SportsSectionLabel, {
+    match: section.matches[0]
+  }), /*#__PURE__*/external_React_default().createElement("ul", null, section.matches.map(match => /*#__PURE__*/external_React_default().createElement("li", {
+    key: `${match.home_team.key}-${match.away_team.key}-${match.date}`
+  }, /*#__PURE__*/external_React_default().createElement(SportsMatchRow, {
+    match: match,
+    variant: "upcoming",
+    size: "list",
+    handleInteraction: handleInteraction,
+    followedTeams: selectedTeamsSet
+  })))))))) : next[0] && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, size === "large" && /*#__PURE__*/external_React_default().createElement(SportsSectionLabel, {
+    match: next[0]
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "match-highlight-view"
+  }, /*#__PURE__*/external_React_default().createElement(SportsMatchRow, {
+    match: next[0],
+    variant: "upcoming",
+    size: size,
+    handleInteraction: handleInteraction,
+    followedTeams: selectedTeamsSet
+  }))), !!next.length && /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: "secondary",
+    size: size === "medium" ? "small" : undefined,
+    "data-l10n-id": showUpcomingList ? "newtab-sports-widget-show-less" : "newtab-sports-widget-view-all",
+    onClick: () => setShowUpcomingList(v => !v)
+  })));
+}
+const keyDatesList = [{
+  stageL10nId: "newtab-sports-widget-group-stage",
+  start: "2026-06-11",
+  end: "2026-06-27"
+}, {
+  stageL10nId: "newtab-sports-widget-round-32",
+  start: "2026-06-28",
+  end: "2026-07-03"
+}, {
+  stageL10nId: "newtab-sports-widget-round-16",
+  start: "2026-07-04",
+  end: "2026-07-07"
+}, {
+  stageL10nId: "newtab-sports-widget-quarter-finals",
+  start: "2026-07-09",
+  end: "2026-07-11"
+}, {
+  stageL10nId: "newtab-sports-widget-semi-finals",
+  start: "2026-07-14",
+  end: "2026-07-15"
+}, {
+  stageL10nId: "newtab-sports-widget-bronze-finals",
+  date: "2026-07-18"
+}, {
+  stageL10nId: "newtab-sports-widget-final",
+  date: "2026-07-19"
+}];
+function SportsWidgetKeyDates({
+  handleViewMatches
+}) {
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sports-key-dates"
+  }, /*#__PURE__*/external_React_default().createElement("ul", {
+    className: "sports-key-dates-list"
+  }, keyDatesList.map(({
+    stageL10nId,
+    start,
+    end,
+    date
+  }) => /*#__PURE__*/external_React_default().createElement("li", {
+    key: stageL10nId,
+    className: "sports-key-dates-item"
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    "data-l10n-id": stageL10nId
+  }), /*#__PURE__*/external_React_default().createElement("span", {
+    "data-l10n-id": date ? "newtab-sports-widget-key-date" : "newtab-sports-widget-key-date-range",
+    "data-l10n-args": JSON.stringify(date ? {
+      date: new Date(date).getTime()
+    } : {
+      start: new Date(start).getTime(),
+      end: new Date(end).getTime()
+    })
+  })))), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: "secondary",
+    size: "small",
+    "data-l10n-id": "newtab-sports-widget-view-matches",
+    onClick: () => handleViewMatches("key_dates_state")
   }));
 }
 
@@ -16363,6 +17554,30 @@ const getSupportedTimeZones = () => {
   return FIXED_DEFAULT_ZONES;
 };
 
+/**
+ * Returns a localized generic time-zone name, or the IANA id on failure.
+ */
+const getLocalizedTimeZoneName = (timeZone, locale) => {
+  try {
+    const parts = new Intl.DateTimeFormat(locale, {
+      timeZone,
+      timeZoneName: "longGeneric",
+    }).formatToParts(new Date());
+    const part = parts.find(p => p.type === "timeZoneName");
+    return part?.value || timeZone;
+  } catch (e) {
+    return timeZone;
+  }
+};
+
+const buildLocalizedTimeZoneMap = (timeZones, locale) => {
+  const map = new Map();
+  for (const tz of timeZones) {
+    map.set(tz, getLocalizedTimeZoneName(tz, locale));
+  }
+  return map;
+};
+
 const normalizeClockZone = clock => {
   const normalizedClock =
     typeof clock === "string" ? { timeZone: clock } : clock;
@@ -16450,25 +17665,43 @@ const getClockFormDerivedState = ({
   clockSearchQuery,
   clockSelectedTimeZone,
   isEditingClock,
+  localizedTimeZoneMap,
   supportedTimeZones,
 }) => {
   let resolvedClockTimeZone = "";
   const query = clockSearchQuery.trim().toLowerCase();
+  const getLocalized = timeZone =>
+    (localizedTimeZoneMap?.get(timeZone) ?? "").toLowerCase();
+
   if (clockSelectedTimeZone && isValidTimeZone(clockSelectedTimeZone)) {
     resolvedClockTimeZone = clockSelectedTimeZone;
   } else if (query) {
-    resolvedClockTimeZone =
-      supportedTimeZones.find(timeZone => {
-        const city = getCityFromTimeZone(timeZone).toLowerCase();
-        return timeZone.toLowerCase() === query || city === query;
-      }) ?? "";
+    const idOrCityMatch = supportedTimeZones.find(timeZone => {
+      const city = getCityFromTimeZone(timeZone).toLowerCase();
+      return timeZone.toLowerCase() === query || city === query;
+    });
+    if (idOrCityMatch) {
+      resolvedClockTimeZone = idOrCityMatch;
+    } else {
+      // Localized zone names can be shared by multiple IANA zones.
+      const localizedMatches = supportedTimeZones.filter(
+        timeZone => getLocalized(timeZone) === query
+      );
+      if (localizedMatches.length === 1) {
+        [resolvedClockTimeZone] = localizedMatches;
+      }
+    }
   }
 
   const filteredTimeZones = query
     ? supportedTimeZones
         .filter(timeZone => {
           const city = getCityFromTimeZone(timeZone).toLowerCase();
-          return timeZone.toLowerCase().includes(query) || city.includes(query);
+          return (
+            timeZone.toLowerCase().includes(query) ||
+            city.includes(query) ||
+            getLocalized(timeZone).includes(query)
+          );
         })
         .slice(0, 8)
     : [];
@@ -16478,7 +17711,7 @@ const getClockFormDerivedState = ({
       (isEditingClock || canAddClock) && !!resolvedClockTimeZone,
     filteredTimeZones,
     resolvedClockTimeZone,
-    showLocationDropdown: !!(query && !resolvedClockTimeZone),
+    showLocationDropdown: !!(query && !clockSelectedTimeZone),
   };
 };
 
@@ -16600,6 +17833,7 @@ const MAX_NICKNAME_LENGTH = 11;
  * @param {object|null} props.initialClock Pre-fill values when editing.
  * @param {boolean} props.canAddClock
  * @param {string[]} props.supportedTimeZones
+ * @param {string} [props.locale] Locale for localized zone names.
  * @param {(zone: object) => void} props.onSave
  * @param {() => void} props.onCancel
  */
@@ -16608,9 +17842,11 @@ function AddClockForm({
   initialClock,
   canAddClock,
   supportedTimeZones,
+  locale,
   onSave,
   onCancel
 }) {
+  const localizedTimeZoneMap = (0,external_React_namespaceObject.useMemo)(() => buildLocalizedTimeZoneMap(supportedTimeZones, locale), [supportedTimeZones, locale]);
   const [searchQuery, setSearchQuery] = (0,external_React_namespaceObject.useState)(initialClock ? initialClock.city || getCityFromTimeZone(initialClock.timeZone) : "");
   const [selectedTimeZone, setSelectedTimeZone] = (0,external_React_namespaceObject.useState)(initialClock?.timeZone || "");
   const [nickname, setNickname] = (0,external_React_namespaceObject.useState)(initialClock?.label || "");
@@ -16625,8 +17861,9 @@ function AddClockForm({
     clockSearchQuery: searchQuery,
     clockSelectedTimeZone: selectedTimeZone,
     isEditingClock: isEditing,
+    localizedTimeZoneMap,
     supportedTimeZones
-  }), [canAddClock, searchQuery, selectedTimeZone, isEditing, supportedTimeZones]);
+  }), [canAddClock, searchQuery, selectedTimeZone, isEditing, localizedTimeZoneMap, supportedTimeZones]);
 
   // moz-input-search renders its inner input asynchronously, so focusing
   // the custom element host immediately can throw before inputEl exists.
@@ -16650,6 +17887,9 @@ function AddClockForm({
   const handleSelectLocation = (0,external_React_namespaceObject.useCallback)(timeZone => {
     setSearchQuery(getCityFromTimeZone(timeZone));
     setSelectedTimeZone(timeZone);
+  }, []);
+  const handleNicknameInput = (0,external_React_namespaceObject.useCallback)(e => {
+    setNickname(e.target.value.slice(0, MAX_NICKNAME_LENGTH));
   }, []);
   const handleSubmit = (0,external_React_namespaceObject.useCallback)(() => {
     if (!canAddSelectedClock) {
@@ -16711,7 +17951,7 @@ function AddClockForm({
     className: "clocks-search-results",
     role: "listbox",
     "data-l10n-id": "newtab-clock-widget-search-results"
-  }, filteredTimeZones.map((timeZone, index) => /*#__PURE__*/external_React_default().createElement("div", {
+  }, filteredTimeZones.length ? filteredTimeZones.map((timeZone, index) => /*#__PURE__*/external_React_default().createElement("div", {
     id: `clocks-result-${index}`,
     className: "clocks-search-result",
     key: timeZone,
@@ -16729,12 +17969,18 @@ function AddClockForm({
     className: "clocks-search-result-city"
   }, getCityFromTimeZone(timeZone)), /*#__PURE__*/external_React_default().createElement("span", {
     className: "clocks-search-result-timezone"
-  }, timeZone))))), /*#__PURE__*/external_React_default().createElement("moz-input-text", {
+  }, localizedTimeZoneMap?.get(timeZone) || timeZone))) : /*#__PURE__*/external_React_default().createElement("div", {
+    className: "clocks-search-no-results",
+    role: "option",
+    "aria-disabled": "true",
+    "aria-selected": "false",
+    "data-l10n-id": "newtab-clock-widget-search-no-results"
+  }))), /*#__PURE__*/external_React_default().createElement("moz-input-text", {
     className: "clocks-nickname-input",
     "data-l10n-id": "newtab-clock-widget-input-nickname",
     id: "clocks-nickname-input",
     value: nickname,
-    onInput: e => setNickname(e.target.value.slice(0, MAX_NICKNAME_LENGTH))
+    onInput: handleNicknameInput
   }), /*#__PURE__*/external_React_default().createElement("moz-button-group", {
     className: "clocks-add-actions"
   }, /*#__PURE__*/external_React_default().createElement("moz-button", {
@@ -16806,15 +18052,15 @@ function ClocksRow({
   }, /*#__PURE__*/external_React_default().createElement("div", {
     className: "clocks-meta",
     "aria-hidden": "true"
-  }, showLabel && !!clock.label && /*#__PURE__*/external_React_default().createElement("span", {
-    className: chipClassName
-  }, clock.label), /*#__PURE__*/external_React_default().createElement("div", {
+  }, /*#__PURE__*/external_React_default().createElement("div", {
     className: "clocks-label"
   }, /*#__PURE__*/external_React_default().createElement("span", {
     className: "clocks-city"
   }, cityDisplay), /*#__PURE__*/external_React_default().createElement("span", {
     className: "clocks-timezone"
-  }, tzLabel))), /*#__PURE__*/external_React_default().createElement("time", {
+  }, tzLabel)), showLabel && !!clock.label && /*#__PURE__*/external_React_default().createElement("span", {
+    className: chipClassName
+  }, clock.label)), /*#__PURE__*/external_React_default().createElement("time", {
     className: "clocks-time",
     "aria-hidden": "true",
     dateTime: now ? formatDateTimeAttr(now, clock.timeZone) : undefined
@@ -16949,6 +18195,7 @@ function EditClocksPanel({
 
 
 
+
 const Clocks_USER_ACTION_TYPES = {
   ADD_CLOCK: "add_clock",
   ADD_NICKNAME: "add_nickname",
@@ -17000,7 +18247,8 @@ function getClockWidgetDisplayState({
  */
 function Clocks({
   dispatch,
-  size
+  size,
+  widgetEnabledMap
 }) {
   const clocksZonesPref = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values[PREF_CLOCKS_ZONES]);
   const hourFormatPref = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values[PREF_CLOCKS_HOUR_FORMAT]);
@@ -17350,7 +18598,10 @@ function Clocks({
     checked: currentSize === s,
     "data-size": s,
     "data-l10n-id": `newtab-widget-size-${s}`
-  })))), /*#__PURE__*/external_React_default().createElement("panel-item", {
+  })))), /*#__PURE__*/external_React_default().createElement(MoveSubmenu, {
+    widgetId: "clocks",
+    widgetEnabledMap: widgetEnabledMap
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
     "data-l10n-id": "newtab-clock-widget-menu-edit",
     onClick: () => {
       handleShowEditClocks(CLOCK_WIDGET_SOURCE.CONTEXT_MENU);
@@ -17371,6 +18622,7 @@ function Clocks({
     initialClock: editingClockIndex !== null ? clockZones[editingClockIndex] : null,
     canAddClock: canAddClock,
     supportedTimeZones: supportedTimeZones,
+    locale: locale,
     onSave: handleSaveClock,
     onCancel: handleCloseClockForm
   }), isEditingClocks && /*#__PURE__*/external_React_default().createElement(EditClocksPanel, {
@@ -17421,13 +18673,15 @@ function Clocks({
 const weatherEntry = WIDGET_REGISTRY.find(w => w.id === "weather");
 const clocksEntry = WIDGET_REGISTRY.find(w => w.id === "clocks");
 function WeatherRowWidget({
-  dispatch
+  dispatch,
+  widgetEnabledMap
 }) {
   const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
   const weatherSize = resolveWidgetSize(weatherEntry, prefs);
   return /*#__PURE__*/external_React_default().createElement(Weather_Weather, {
     dispatch: dispatch,
-    size: weatherSize
+    size: weatherSize,
+    widgetEnabledMap: widgetEnabledMap
   });
 }
 function WeatherSidebarWidget({
@@ -17443,13 +18697,15 @@ function WeatherSidebarWidget({
   });
 }
 function ClocksRowWidget({
-  dispatch
+  dispatch,
+  widgetEnabledMap
 }) {
   const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
   const clocksSize = resolveWidgetSize(clocksEntry, prefs);
   return /*#__PURE__*/external_React_default().createElement(Clocks, {
     dispatch: dispatch,
-    size: clocksSize
+    size: clocksSize,
+    widgetEnabledMap: widgetEnabledMap
   });
 }
 const WIDGET_ROW_COMPONENTS = {
@@ -17462,6 +18718,26 @@ const WIDGET_ROW_COMPONENTS = {
 const WIDGET_SIDEBAR_COMPONENTS = {
   weather: WeatherSidebarWidget
 };
+;// CONCATENATED MODULE: ./content-src/components/Widgets/WidgetWrapper.jsx
+function WidgetWrapper_extends() { return WidgetWrapper_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, WidgetWrapper_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+// Widget wrapper can be a place to normalize widget functionality, and
+// wrap the more widget specific functionality.
+function WidgetWrapper({
+  className,
+  children,
+  ...rest
+}) {
+  const merged = ["widget-wrapper", "col-4", className].filter(Boolean).join(" ");
+  return /*#__PURE__*/external_React_default().createElement("div", WidgetWrapper_extends({}, rest, {
+    className: merged
+  }), children);
+}
 ;// CONCATENATED MODULE: ./content-src/components/Widgets/Widgets.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -17469,8 +18745,10 @@ const WIDGET_SIDEBAR_COMPONENTS = {
 
 
 
+
 // Bug 2034542: these per-widget imports can be removed once the non-Nova render
 // path (@nova-cleanup) is gone and all widgets render via WIDGET_ROW_COMPONENTS.
+
 
 
 
@@ -17555,7 +18833,11 @@ function Widgets() {
   } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
   const timerType = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.TimerWidget.timerType);
   const timerData = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.TimerWidget);
+  const sportsWidgetState = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.SportsWidget?.widgetState);
   const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
+  const {
+    openWidgetsPanel
+  } = (0,external_React_namespaceObject.useContext)(BaseContext);
   const novaEnabled = prefs[Widgets_PREF_NOVA_ENABLED];
   const isMaximized = prefs[PREF_WIDGETS_MAXIMIZED];
   const nimbusMaximizedTrainhopEnabled = prefs.trainhopConfig?.widgets?.maximized;
@@ -17730,6 +19012,13 @@ function Widgets() {
       toggleMaximize();
     }
   }
+  function handleManageWidgetsClick(e) {
+    e.preventDefault();
+    openWidgetsPanel();
+    dispatch(actionCreators.UserEvent({
+      event: "SHOW_PERSONALIZE"
+    }));
+  }
   function handleFeedbackClick(e) {
     e.preventDefault();
     (0,external_ReactRedux_namespaceObject.batch)(() => {
@@ -17795,6 +19084,9 @@ function Widgets() {
         "data-l10n-id": "newtab-widget-section-menu-hide-all",
         onClick: handleHideAllWidgetsClick
       }), /*#__PURE__*/external_React_default().createElement("panel-item", {
+        "data-l10n-id": "newtab-widget-section-menu-manage",
+        onClick: handleManageWidgetsClick
+      }), /*#__PURE__*/external_React_default().createElement("panel-item", {
         "data-l10n-id": "newtab-widget-section-menu-learn-more",
         onClick: handleFeedbackClick
       })));
@@ -17839,13 +19131,26 @@ function Widgets() {
   }, widgetOrder.map(id => {
     if (novaEnabled) {
       const Component = WIDGET_ROW_COMPONENTS[id];
-      return Component && widgetEnabledMap[id] ? /*#__PURE__*/external_React_default().createElement(Component, {
+      if (!Component || !widgetEnabledMap[id]) {
+        return null;
+      }
+      const entry = WIDGET_REGISTRY.find(w => w.id === id);
+      let size = entry ? resolveWidgetSize(entry, prefs) : null;
+      // The follow-teams panel needs the larger grid cell to fit its content,
+      // so we override the user's size pref while that state is active.
+      if (id === "sportsWidget" && sportsWidgetState === "sports-follow-state") {
+        size = "large";
+      }
+      return /*#__PURE__*/external_React_default().createElement(WidgetWrapper, {
         key: id,
+        className: size ? `${size}-widget` : ""
+      }, /*#__PURE__*/external_React_default().createElement(Component, {
         dispatch: dispatch,
         handleUserInteraction: handleUserInteraction,
         isMaximized: isMaximized,
-        widgetsMayBeMaximized: widgetsMayBeMaximized
-      }) : null;
+        widgetsMayBeMaximized: widgetsMayBeMaximized,
+        widgetEnabledMap: widgetEnabledMap
+      }));
     }
     // @nova-cleanup: remove below
     return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, {
@@ -18069,6 +19374,7 @@ function ExternalComponentWrapper({
 
 
 
+// eslint-disable-next-line no-shadow
 
 
 
@@ -18408,7 +19714,6 @@ function SectionsMgmtPanel_extends() { return SectionsMgmtPanel_extends = Object
 // eslint-disable-next-line no-shadow
 
 function SectionsMgmtPanel({
-  exitEventFired,
   pocketEnabled,
   onSubpanelToggle,
   togglePanel,
@@ -18537,13 +19842,6 @@ function SectionsMgmtPanel({
       }
     }));
   }, [dispatch, sectionPersonalization]);
-
-  // Close followed/blocked topic subpanel when parent menu is closed
-  (0,external_React_namespaceObject.useEffect)(() => {
-    if (exitEventFired && showPanel) {
-      togglePanel();
-    }
-  }, [exitEventFired, showPanel, togglePanel]);
 
   // Notify parent menu when subpanel opens/closes
   (0,external_React_namespaceObject.useEffect)(() => {
@@ -19454,7 +20752,6 @@ const WallpaperCategories = (0,external_ReactRedux_namespaceObject.connect)(stat
 // eslint-disable-next-line no-shadow
 
 function WidgetsManagementPanel({
-  exitEventFired,
   onSubpanelToggle,
   togglePanel,
   showPanel,
@@ -19472,13 +20769,6 @@ function WidgetsManagementPanel({
   const arrowButtonRef = (0,external_React_namespaceObject.useRef)(null);
   const panelRef = (0,external_React_namespaceObject.useRef)(null);
   const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
-
-  // Close widget subpanel when parent menu is closed
-  (0,external_React_namespaceObject.useEffect)(() => {
-    if (exitEventFired && showPanel) {
-      togglePanel();
-    }
-  }, [exitEventFired, showPanel, togglePanel]);
 
   // Notify parent menu when subpanel opens/closes
   (0,external_React_namespaceObject.useEffect)(() => {
@@ -19516,7 +20806,7 @@ function WidgetsManagementPanel({
           widgetName = "focus_timer";
           break;
         case "WIDGET_SPORTS":
-          widgetName = "sports_widget";
+          widgetName = "sports";
           break;
         case "WIDGET_CLOCKS":
           widgetName = "clocks";
@@ -19632,10 +20922,8 @@ function WidgetsManagementPanel({
     ontoggle: onToggleWidget,
     onToggle: onToggleWidget,
     "data-preference": "widgets.sportsWidget.enabled",
-    "data-event-source": "WIDGET_SPORTS"
-    //  TODO: add in widget title fluent string when product gets back to us*
-    ,
-    label: "Sports"
+    "data-event-source": "WIDGET_SPORTS",
+    "data-l10n-id": "newtab-custom-widget-sports-toggle2"
   })), mayHaveClocksWidget && /*#__PURE__*/external_React_default().createElement("div", {
     id: "clocks-widget-section",
     className: "section"
@@ -20001,7 +21289,6 @@ class ContentSection extends (external_React_default()).PureComponent {
       mayHaveWeatherForecast: mayHaveWeatherForecast,
       weatherDisplay: weatherDisplay,
       setPref: setPref,
-      exitEventFired: exitEventFired,
       onSubpanelToggle: onSubpanelToggle,
       togglePanel: toggleWidgetsManagementPanel,
       showPanel: showWidgetsManagementPanel
@@ -20098,7 +21385,6 @@ class _CustomizeMenu extends (external_React_default()).PureComponent {
     this.dialogRef = /*#__PURE__*/external_React_default().createRef();
     this.closeButtonRef = /*#__PURE__*/external_React_default().createRef();
     this.state = {
-      exitEventFired: false,
       subpanelOpen: false
     };
   }
@@ -20124,9 +21410,6 @@ class _CustomizeMenu extends (external_React_default()).PureComponent {
     }
   }
   onEntered() {
-    this.setState({
-      exitEventFired: false
-    });
     if (this.closeButtonRef.current) {
       this.closeButtonRef.current.focus();
     }
@@ -20135,9 +21418,12 @@ class _CustomizeMenu extends (external_React_default()).PureComponent {
     if (this.dialogRef.current?.open) {
       this.dialogRef.current.close();
     }
-    this.setState({
-      exitEventFired: true
-    });
+    if (this.props.showWidgetsManagementPanel) {
+      this.props.toggleWidgetsManagementPanel();
+    }
+    if (this.props.showSectionsMgmtPanel) {
+      this.props.toggleSectionsMgmtPanel();
+    }
     if (this.personalizeButtonRef.current) {
       this.personalizeButtonRef.current.focus();
     }
@@ -20224,7 +21510,6 @@ class _CustomizeMenu extends (external_React_default()).PureComponent {
       mayHaveSportsWidget: this.props.mayHaveSportsWidget,
       mayHaveClocksWidget: this.props.mayHaveClocksWidget,
       dispatch: this.props.dispatch,
-      exitEventFired: this.state.exitEventFired,
       onSubpanelToggle: this.onSubpanelToggle,
       toggleSectionsMgmtPanel: this.props.toggleSectionsMgmtPanel,
       showSectionsMgmtPanel: this.props.showSectionsMgmtPanel,
@@ -20239,20 +21524,620 @@ const CustomizeMenu = (0,external_ReactRedux_namespaceObject.connect)(state => (
   DiscoveryStream: state.DiscoveryStream,
   Prefs: state.Prefs
 }))(_CustomizeMenu);
+;// CONCATENATED MODULE: ./content-src/components/Logo/variants/SpinBallSmall.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * @backward-compat { version 153 }
+ * The entire logo-variation feature can be removed after Firefox 153 hits
+ * Release, when the 2026 World Cup is over. Delete this file, the
+ * `logo-variation-small`/`spin-ball-small` SCSS blocks plus their
+ * `@keyframes`, the `logo.variation` pref entry in
+ * `ActivityStream.sys.mjs`, and the logo-variation selection logic in
+ * `Logo.jsx` (Logo reverts to its original default-only rendering).
+ */
+
+
+
+/**
+ * The "spin ball, small" logo variation. Renders the supplied animated
+ * Firefox SVG (inline JSX) into the newtab logo slot. The SVG is purely
+ * decorative — it's `aria-hidden`, has no interactive ARIA role, and is not
+ * keyboard-focusable. Mouse users discover the click affordance via
+ * `cursor: pointer` (defined in `_Logo.scss`).
+ *
+ * All animations declared on the SVG's children load `paused` (per the
+ * `animation-play-state: paused` rule in `_Logo.scss`). They begin running
+ * on the first click and re-run on each subsequent click (see the click
+ * handler below).
+ *
+ * @returns {React.ReactElement} The animated SVG element.
+ */
+function SpinBallSmall() {
+  const svgRef = (0,external_React_namespaceObject.useRef)(null);
+
+  /**
+   * Plays every CSS animation declared on the SVG (and its descendants),
+   * resetting them to t=0 first so the cross-fade between the classic and
+   * "nova" Firefox icons stays synchronised across replays.
+   *
+   * Two guards:
+   *  - `prefers-reduced-motion: reduce` short-circuits without invoking
+   *    `play()`. The SVG remains visible at its frame-0 keyframe state
+   *    (effectively the static Firefox logo), preserving the click
+   *    affordance for users who have reduced motion enabled while
+   *    honouring their preference.
+   *  - `playState !== "running"` makes the variation one-shot per click.
+   *    Clicking again while the animation is in flight does nothing;
+   *    clicking after it finishes restarts cleanly thanks to the
+   *    explicit `currentTime = 0` reset.
+   */
+  const handleClick = () => {
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    const animations = svg.getAnimations({
+      subtree: true
+    });
+    if (animations.length && animations[0].playState !== "running") {
+      animations.forEach(a => {
+        a.currentTime = 0;
+        a.play();
+      });
+    }
+  };
+  return /*#__PURE__*/external_React_default().createElement("svg", {
+    ref: svgRef,
+    xmlns: "http://www.w3.org/2000/svg",
+    viewBox: "0 0 1000 1000",
+    className: "logo-variation-small spin-ball-small",
+    "aria-hidden": "true",
+    onClick: handleClick
+  }, /*#__PURE__*/external_React_default().createElement("defs", null, /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-0",
+    x1: "309.4",
+    y1: "12.5",
+    x2: "368.1",
+    y2: "337.9",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "0",
+    stopColor: "#fff44f"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".3",
+    stopColor: "#ffd94d"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".7",
+    stopColor: "#ffb04b"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "1",
+    stopColor: "#ff980e"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-1",
+    x1: ".4",
+    y1: "397.2",
+    x2: "55.6",
+    y2: "397.2",
+    gradientUnits: "userSpaceOnUse",
+    gradientTransform: "matrix(1 0 0 -1 0 523.6)"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".2",
+    stopColor: "#af16c0"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".9",
+    stopColor: "#00053d"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-2",
+    x1: "283.1",
+    y1: "397.1",
+    x2: "338.1",
+    y2: "397.1",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".2",
+    stopColor: "#af16c0"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".9",
+    stopColor: "#00053d"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-3",
+    x1: "112.2",
+    y1: "498.8",
+    x2: "226.6",
+    y2: "498.8",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".2",
+    stopColor: "#af16c0"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".9",
+    stopColor: "#00053d"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-4",
+    x1: "39.6",
+    y1: "236.6",
+    x2: "134.2",
+    y2: "236.6",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".2",
+    stopColor: "#af16c0"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".9",
+    stopColor: "#00053d"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-5",
+    x1: "204.5",
+    y1: "236.8",
+    x2: "299.2",
+    y2: "236.8",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".2",
+    stopColor: "#af16c0"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".9",
+    stopColor: "#00053d"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-6",
+    x1: "112.6",
+    y1: "359.2",
+    x2: "226.1",
+    y2: "359.2",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".2",
+    stopColor: "#af16c0"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".9",
+    stopColor: "#00053d"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-7",
+    x1: "-137.6",
+    y1: "457.7",
+    x2: "-0.8",
+    y2: "320.9",
+    gradientUnits: "userSpaceOnUse",
+    gradientTransform: "matrix(.7 .7 .7 -0.7 -226.3 307.5)"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "0",
+    stopColor: "#929497"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "1",
+    stopColor: "#929497"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-8",
+    x1: "-49.2",
+    y1: "116.8",
+    x2: "47",
+    y2: "-111.8",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".3",
+    stopColor: "#3a8ee6"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".7",
+    stopColor: "#9059ff"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "1",
+    stopColor: "#c139e6"
+  })), /*#__PURE__*/external_React_default().createElement("radialGradient", {
+    id: "spin-ball-small-gradient-9",
+    cx: "1.8",
+    cy: "-36.9",
+    r: "137.5",
+    fx: "1.8",
+    fy: "-36.9",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".2",
+    stopColor: "#9059ff",
+    stopOpacity: "0"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "1",
+    stopColor: "#6e008b",
+    stopOpacity: ".6"
+  })), /*#__PURE__*/external_React_default().createElement("radialGradient", {
+    id: "spin-ball-small-gradient-10",
+    cx: "-1767.7",
+    cy: "2465",
+    r: "2.9",
+    fx: "-1767.7",
+    fy: "2465",
+    gradientUnits: "userSpaceOnUse",
+    gradientTransform: "matrix(58.5 0 0 -58.7 103677 144814)"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".1",
+    stopColor: "#ffe226"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".8",
+    stopColor: "#ff7139"
+  })), /*#__PURE__*/external_React_default().createElement("radialGradient", {
+    id: "spin-ball-small-gradient-11",
+    cx: "-1788.7",
+    cy: "2446.5",
+    r: "3.1",
+    fx: "-1788.7",
+    fy: "2446.5",
+    gradientUnits: "userSpaceOnUse",
+    gradientTransform: "matrix(178.6 0 0 -159.8 319794 391016)"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".1",
+    stopColor: "#fff44f"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".6",
+    stopColor: "#ff980e"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-12",
+    x1: "420.4",
+    y1: "80.8",
+    x2: "71.7",
+    y2: "389",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".1",
+    stopColor: "#fff44f"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".6",
+    stopColor: "#ff980e"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".9",
+    stopColor: "#ff3647"
+  })), /*#__PURE__*/external_React_default().createElement("linearGradient", {
+    id: "spin-ball-small-gradient-13",
+    x1: "475.9",
+    y1: "184.4",
+    x2: "50.9",
+    y2: "413.4",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "0",
+    stopColor: "#ffe743"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".3",
+    stopColor: "#ff980e"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".5",
+    stopColor: "#ff3750"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".8",
+    stopColor: "#eb0878"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: "1",
+    stopColor: "#e50080"
+  })), /*#__PURE__*/external_React_default().createElement("radialGradient", {
+    id: "spin-ball-small-gradient-14",
+    cx: "291.4",
+    cy: "184",
+    r: "311.4",
+    fx: "291.4",
+    fy: "184",
+    gradientUnits: "userSpaceOnUse"
+  }, /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".1",
+    stopColor: "#fff44f"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".6",
+    stopColor: "#ff980e"
+  }), /*#__PURE__*/external_React_default().createElement("stop", {
+    offset: ".8",
+    stopColor: "#ff3647"
+  }))), /*#__PURE__*/external_React_default().createElement("g", {
+    className: "spin-ball-small__spin"
+  }, /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M438.4 180.4c-27.2-67.7-73.2-95-110.9-154.5c-1.9-3-3.8-6-5.6-9.2c-1-1.6-1.9-3.3-2.7-4.9c-1.5-3.1-2.8-6.3-3.6-9.6c0-0.3-0.2-0.6-0.5-0.6c-0.2 0-0.3 0-0.4 0c.2-0.1 .4-0.3 .6-0.4c0 0 .1-0.1 .1-0.1c-60.4 35.4-80.9 100.8-82.7 133.5c2.8-0.2 5.5-0.4 8.4-0.4c30.7 0 58.7 11.5 80 30.4c1.2 1.2 2.3 2.4 3.5 3.6c8.8 8.6 16.3 18.4 22.3 29.1c1.3 1 2.6 2 3.6 2.9c54.5 50.2 26 121.2 23.8 126.3c44.3-36.5 72.6-90.4 64.1-146.1Z",
+    fill: "url(#spin-ball-small-gradient-0)"
+  }), /*#__PURE__*/external_React_default().createElement("g", {
+    className: "spin-ball-small__classic",
+    transform: "translate(241.1,255.7) scale(.739424,.739424) translate(-169.3,-169.3)"
+  }, /*#__PURE__*/external_React_default().createElement("g", {
+    "data-name": "Layer 1"
+  }, /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M55.6 132.2l-0.2-60c0 0-9.6 1.5-15.6 3.1c-5.4 1.4-14.1 4.3-14.1 4.3c-14.2 22.8-23.2 49.2-25.3 77.5c0 0 5.4 7.6 8.3 11.1c4 4.9 11.5 12.4 11.5 12.4l35.4-48.4Z",
+    fill: "url(#spin-ball-small-gradient-1)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M283.1 132.1l35.4 48.5c0 0 7.2-7.7 11.4-13.3c4.4-5.9 8.2-12.2 8.2-12.2c-2.3-27.4-11.1-53-24.9-75.2c0 0-6.5-2.4-14.6-4.6c-7.5-2-15.3-3.1-15.3-3.1l-0.2 59.9Z",
+    fill: "url(#spin-ball-small-gradient-2)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M169.3 49.5l57.3-18.6c0 0-4.5-8.7-8.5-14.6c-4.6-6.9-8.5-11.5-8.5-11.5c-12.9-3.1-26.4-4.8-40.3-4.8c-13.9 0-27.8 1.7-40.9 5c0 0-5.5 7.5-8.4 11.9c-3.3 5.3-7.8 14-7.8 14l57.1 18.6Z",
+    fill: "url(#spin-ball-small-gradient-3)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M99 265.9l-57.1-18.5c0 0-1.5 10-1.9 15.2c-0.4 5.6-0.4 15.5-0.4 15.5c17.8 21.3 40.7 38.1 66.9 48.5c0 0 7.9-2.5 13.9-5.1c7-3.1 13.8-6.9 13.8-6.9l-35.2-48.7Z",
+    fill: "url(#spin-ball-small-gradient-4)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M239.7 265.9l-35.2 48.7c0 0 7.8 4 13.8 6.5c7.3 2.9 14.8 5.1 14.8 5.1c25.8-10.5 48.4-27.1 66.1-48.1c-0.1 0 .2-8.1-0.3-14.6c-0.6-7.3-2.1-16.1-2.1-16.1l-57.1 18.6Z",
+    fill: "url(#spin-ball-small-gradient-5)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M204.5 314.6c0-0.1 11.4-10.5 20.2-22.8c9.5-13.3 15-25.9 15-25.9l-35.3-48.5h-70.1l-35.3 48.5c0 0 6.3 14.3 14.9 25.9c9.1 12.4 20.3 22.8 20.3 22.8c0 0 15.2 4.3 35.2 4.3c18.5 0 35.1-4.4 35.1-4.4Z",
+    fill: "#dcdddd"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M318.5 180.6c0 0-6.1-13.6-15.9-27c-8.6-11.8-19.5-21.5-19.5-21.5l-57 18.6l-21.7 66.7l35.3 48.5c0 0 15.5-1.7 29.6-6.3c15.1-5 27.5-12.2 27.5-12.2c0 0 9-13.9 14.9-31.9c5.9-18 6.8-34.9 6.8-34.9Z",
+    fill: "#d4d5d5"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M20.2 180.6c0 0 5.9-13.6 15.2-26.2c9.2-12.5 20.1-22.2 20.1-22.2l57 18.5l21.7 66.7l-35.2 48.5c0 0-14.6-1.5-29.9-6.3c-14.9-4.7-27.3-12.2-27.3-12.2c0 0-9.1-12.9-14.9-31.7c-6.1-19.6-6.7-35.1-6.7-35.1Z",
+    fill: "#eeefef"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M55.4 72.2c0 0-3 14.5-3 28.3c0 16.9 3.2 31.7 3.2 31.7l57 18.5l56.7-41.3v-59.9c0 0-12.7-7.4-28.8-12.6c-15-4.9-28.3-6-28.3-6c0 0-14 5-30.5 16.9c-16.2 11.6-26.3 24.4-26.3 24.4Z",
+    fill: "#f9f9f9"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M169.3 109.4v-59.9c0 0 13.4-7.7 28.2-12.5c15.4-4.9 29.1-6.2 29.1-6.2c0 0 13.3 5 30.2 16.9c15.5 11 26.5 24.5 26.5 24.5c0 0 3 12.6 3 29.6c0 17-3.2 30.3-3.2 30.3l-57 18.6l-56.8-41.3Z",
+    fill: "#ececec"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M134.2 217.4c.1 0-9.8-24.1-13-34c-3.3-10-8.6-32.7-8.6-32.7c0 0 17.7-15.2 27.3-22.3c9.3-6.8 29.4-19 29.4-19c0 0 20.6 12.8 30 19.6c8.7 6.2 26.8 21.7 26.8 21.7c0 0-5.5 22.4-9 33.4c-3.4 11-12.7 33.3-12.7 33.3c0 0-23.3 1.9-35.8 1.9c-11.7 0-34.3-1.9-34.3-1.9Z",
+    fill: "url(#spin-ball-small-gradient-6)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M204.5 314.6v-0.1l-0.1 .1c0-0.1-16.5 4.3-35.1 4.3c-19.9 0-35-4.3-35.1-4.3c0 0-6.8 3.8-13.8 6.9c-6 2.6-13.9 5.1-13.9 5.1c-1.6-0.6 26.4 12.1 62.8 12.1c22.6 0 44.1-4.5 63.8-12.5c0 0-7.6-2.2-14.8-5.1c-6.1-2.4-13.8-6.5-13.8-6.5h-0.1Z",
+    fill: "#cacbcb"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M318.5 180.6c0 0-0.9 16.9-6.8 34.9c-5.9 18-14.9 31.9-14.9 31.9c0 0 1.6 8.8 2.1 16.1c.5 6.4 .3 14.5 .3 14.6c24.6-29.5 39.5-67.4 39.5-108.8c0-4.8-0.2-9.5-0.6-14.2c-0.1 .1-3.9 6.4-8.2 12.2c-4.2 5.6-11.4 13.3-11.4 13.3Z",
+    fill: "#cacbcb"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M39.6 278.1c0 0 0-9.9 .4-15.5c.3-5.1 1.8-15.1 1.8-15.2c0 0-9.1-12.9-14.9-31.8c-6.1-19.6-6.7-35-6.7-35c0 0-7.5-7.6-11.5-12.4c-2.7-3.3-7.5-10.1-8.3-11.1c-0.2 4.1-0.4 8.1-0.4 12.2c0 62 33.3 116.2 82.9 145.7c-16.4-9.8-31.1-22.3-43.3-36.9Z",
+    fill: "#f3f4f4"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M55.4 72.2c0 0 10.1-12.8 26.3-24.4c16.5-11.9 30.5-16.9 30.5-16.9c0 0 4.4-8.8 7.8-14c2.9-4.4 8.4-11.9 8.4-11.9c1.6-0.4 3.3-0.8 4.9-1.2c-45.3 9.8-83.8 37.8-107.6 75.8c1.4-0.4 9.2-3.1 14.1-4.3c5.9-1.6 15.5-3.1 15.6-3.1Z",
+    fill: "#f6f6f6"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M226.6 30.9c0 0 13.3 4.9 30.2 16.9c15.5 10.9 26.5 24.4 26.5 24.4c0 0 7.8 1.1 15.3 3.1c8.1 2.2 14.5 4.6 14.6 4.6c-23.1-37-60-64.4-103.6-75.1c.1 .1 3.9 4.6 8.5 11.5c4 5.9 8.4 14.6 8.4 14.6Z",
+    fill: "#f1f1f1"
+  }), /*#__PURE__*/external_React_default().createElement("ellipse", {
+    rx: "123.4",
+    ry: "115.8",
+    fill: "url(#spin-ball-small-gradient-7)",
+    transform: "translate(-57.4,146.1) rotate(-45) translate(147.7,142.3)",
+    style: {
+      isolation: "isolate",
+      mixBlendMode: "hard-light"
+    }
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M338.7 169.3c0 93.5-75.9 169.4-169.4 169.4c-64.5-0.1-120.6-36.2-149.2-89.3c28.8 24.7 66.3 39.7 107.3 39.7c90.8 0 164.4-73.2 164.4-163.4c-0.1-38.6-13.5-74-35.9-101.9c49.5 29.5 82.7 83.7 82.7 145.5h.1Z",
+    opacity: ".6",
+    fill: "#696969",
+    style: {
+      isolation: "isolate",
+      mixBlendMode: "hard-light"
+    }
+  }))), /*#__PURE__*/external_React_default().createElement("g", {
+    className: "spin-ball-small__nova"
+  }, /*#__PURE__*/external_React_default().createElement("ellipse", {
+    rx: "130",
+    ry: "130",
+    fill: "url(#spin-ball-small-gradient-8)",
+    transform: "translate(240,263.6)"
+  }), /*#__PURE__*/external_React_default().createElement("ellipse", {
+    rx: "130",
+    ry: "130",
+    fill: "url(#spin-ball-small-gradient-9)",
+    transform: "translate(240,263.6)"
+  })), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M153.6 151.7c1.7 1.1 3.3 2.2 5 3.3c-5.5-19.1-5.7-39.4-0.7-58.7c-24.7 11.2-43.9 29-57.9 44.7c1.2 0 36.1-0.7 53.6 10.7Z",
+    fill: "url(#spin-ball-small-gradient-10)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M132.7 278.5c0 0 11.1-41.4 79.4-41.4c7.4 0 28.5-20.6 28.9-26.6c.4-5.9-43.7 18.4-90.2-3.5c-50.3-23.6-88.4 3.5-88.4 3.5c0 0 14.5 35.9 56.9 35.9c-4.4 39.2 16.4 85 66.6 109.1c1.2 .5 2.2 1.1 3.4 1.6c-29.4-15.2-53.6-43.8-56.6-78.6Z",
+    fill: "url(#spin-ball-small-gradient-11)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M2.2 262.7c18.5 109.6 117.8 193.2 230.6 196.4c104.4 3 171-57.6 198.6-116.7c17.8-38.2 30.1-100.7 7.5-162.2c0 0-0.1-0.2-0.1-0.2c0-0.2 0-0.3 0-0.3c0 .1 0 .2 0 .4c8.6 55.7-19.8 109.6-64 146.1l-0.1 .3c-86.3 70.2-168.8 42.4-185.5 31c-1.2-0.6-2.4-1.2-3.5-1.8c-50.3-24-71.1-69.8-66.6-109.1c-42.5 0-57-35.8-57-35.8c0 0 38.2-27.2 88.4-3.6c46.5 21.9 90.2 3.6 90.2 3.6c-0.1-2-41.9-18.6-58.2-34.7c-8.7-8.6-12.8-12.7-16.5-15.8c-2-1.7-4.1-3.3-6.2-4.7c-1.7-1.1-3.3-2.2-5-3.3c-17.5-11.4-52.4-10.8-53.5-10.7h-0.2c-9.5-12.1-8.8-51.9-8.3-60.2c-0.1-0.5-7.1 3.6-8 4.2c-8.4 6-16.3 12.8-23.5 20.1c-8.2 8.4-15.7 17.4-22.4 27c0 0 0 0 0 0c0 0 0 0 0 0c-15.5 21.9-26.4 46.6-32.3 72.8c-0.1 .5-8.6 37.8-4.4 57.2Z",
+    fill: "url(#spin-ball-small-gradient-12)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M462.7 166.4c-10.4-25.2-31.6-52.3-48.2-60.9c13.5 26.5 21.4 53.1 24.3 73c0-0.1 0 0 .1 .2c0 .1 0 .2 0 .3c22.7 61.4 10.3 123.9-7.5 162.1c-27.5 59.1-94.2 119.7-198.6 116.8c-112.7-3.2-212-86.9-230.6-196.5c-3.4-17.3 0-26 1.7-40.1c-2.1 10.9-2.8 14-3.9 33.2c0 .4 0 .8 0 1.2c0 132.7 107.6 240.3 240.3 240.3c118.9 0 217.6-86.3 236.9-199.6c.4-3.1 .7-6.2 1.1-9.3c4.8-41.2-0.5-84.5-15.6-120.7Z",
+    fill: "url(#spin-ball-small-gradient-13)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M350 200.4c-1-1-2.3-2-3.6-2.9c-0.5-0.4-0.9-0.8-1.5-1.1c-12.8-9.1-35.8-18-57.9-14.1c86.4 43.2 63.2 192-56.6 186.4c-10.6-0.5-21.2-2.5-31.2-6c-2.4-0.9-4.8-1.9-7.1-2.9c-1.4-0.7-2.7-1.3-4-2c0 .1 .1 .1 .1 .1c16.7 11.4 99.3 39.3 185.5-30.9l.1-0.3c2.2-5.1 30.7-76.1-23.8-126.3Z",
+    fill: "url(#spin-ball-small-gradient-14)"
+  }), /*#__PURE__*/external_React_default().createElement("path", {
+    d: "M438 180.2c-27.2-67.7-73.3-95-110.9-154.5c-1.9-3-3.8-6-5.7-9.2c-0.9-1.6-1.8-3.3-2.6-5c-1.6-3-2.8-6.2-3.6-9.5c0-0.3-0.2-0.6-0.5-0.6c-0.2-0.1-0.3-0.1-0.5 0c0 0-0.1 0-0.1 0c-0.1 .1-0.1 .1-0.2 .1c-9.3 4.5-64.4 91.7 10.3 166.4c8.8 8.6 16.3 18.4 22.3 29.1c1.3 1 2.6 2 3.6 3c54.5 50.2 26 121.2 23.8 126.2c44.3-36.4 72.6-90.3 64.1-146Z",
+    opacity: ".05",
+    fill: "#060605"
+  })));
+}
+
 ;// CONCATENATED MODULE: ./content-src/components/Logo/Logo.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/**
+ * @backward-compat { version 153 }
+ * Everything below tagged with the same marker — the logo-variation
+ * registry, `pickVariant`, the hook, and the variation-selection block
+ * inside `Logo()` — can be removed after Firefox 153 hits Release, when
+ * the 2026 World Cup is over. After cleanup, `Logo()` reverts to its
+ * original shape: just the wrapper + `.logo` div + `.wordmark`.
+ */
 
+
+
+
+/**
+ * @backward-compat { version 153 }
+ * Pref consulted (after `trainhopConfig.logo.variation`) to choose a logo
+ * variation. Empty string disables. Useful for local QA — set it via
+ * `about:config` to preview a variation without an experiment.
+ */
+const PREF_LOGO_VARIATION = "logo.variation";
+
+/**
+ * @backward-compat { version 153 }
+ * Registry of all available logo variations.
+ *
+ * The key is the variant's string ID — the value that
+ * `trainhopConfig.logo.variation` or the pref must equal for this variant
+ * to be selected. Adding a new variant means:
+ *   1. Implementing a `<Variant />` component under `./variants/`.
+ *   2. Adding an entry here with its constraints and fallback target.
+ *
+ * Each entry has:
+ *  - `component`: the React component to render.
+ *  - `minViewportWidth`: minimum viewport width in CSS pixels for this
+ *      variant to be considered usable. `0` means no width restriction.
+ *  - `requiresLTR`: when `true`, this variant is skipped in RTL locales.
+ *  - `fallback`: another variant ID to try when this variant's constraints
+ *      aren't met, or `null` to fall through to the default newtab logo.
+ *
+ * Universal constraints that apply to every variant (e.g.
+ * `prefers-reduced-motion: reduce` handling) are NOT encoded here; they
+ * are handled at the call site or inside the variation component instead.
+ */
+const LOGO_VARIATIONS = {
+  "spin-ball-small": {
+    component: SpinBallSmall,
+    minViewportWidth: 0,
+    requiresLTR: false,
+    fallback: null
+  }
+};
+const VARIANT_THRESHOLDS = Object.values(LOGO_VARIATIONS).map(v => v.minViewportWidth);
+
+/**
+ * @backward-compat { version 153 }
+ * Walk the fallback chain starting at `variantId`, returning the first
+ * variant whose per-variant constraints are satisfied by the supplied
+ * environment, or `null` if none are.
+ *
+ * Cycle-safe: a fallback chain that loops back on itself terminates as soon
+ * as a previously-seen ID is encountered.
+ *
+ * @param {string|null|undefined} variantId
+ *   The variant ID to start walking from (typically the value of the
+ *   trainhopConfig or pref). Falsy values short-circuit to `null`.
+ * @param {object} env
+ *   The current rendering environment.
+ * @param {number} env.viewportWidth
+ *   The largest `min-width` breakpoint the viewport currently satisfies, in
+ *   CSS pixels. A variant passes the width gate when its `minViewportWidth`
+ *   is at or below this number.
+ * @param {boolean} env.isLTR
+ *   `true` if the document direction is LTR. A variant whose `requiresLTR`
+ *   is `true` is skipped when this is `false`.
+ * @returns {object|null}
+ *   The selected variant entry from `LOGO_VARIATIONS`, or `null` when no
+ *   variant in the chain is usable (callers should render the default logo).
+ */
+function pickVariant(variantId, {
+  viewportWidth,
+  isLTR
+}) {
+  let id = variantId;
+  const seen = new Set();
+  while (id && !seen.has(id)) {
+    seen.add(id);
+    const v = LOGO_VARIATIONS[id];
+    if (!v) {
+      return null;
+    }
+    const widthOk = viewportWidth >= v.minViewportWidth;
+    const dirOk = !v.requiresLTR || isLTR;
+    if (widthOk && dirOk) {
+      return v;
+    }
+    id = v.fallback;
+  }
+  return null;
+}
+
+/**
+ * @backward-compat { version 153 }
+ * Subscribe to a set of `(min-width: Npx)` media queries and return the
+ * largest threshold currently matched. Useful for picking a behaviour based
+ * on the current viewport size while only re-rendering on breakpoint
+ * crossings (not on every `resize` tick).
+ *
+ * @param {number[]} thresholds
+ *   The breakpoints to observe, in CSS pixels. Duplicates are deduplicated.
+ *   Pass a stable array reference (e.g. a module-level constant) so the
+ *   underlying `MediaQueryList` instances aren't recreated on every render.
+ * @returns {number}
+ *   The largest threshold in `thresholds` whose query currently matches, or
+ *   `0` if none of them do.
+ */
+function useMaxMatchedMinWidth(thresholds) {
+  const queries = (0,external_React_namespaceObject.useMemo)(() => {
+    const unique = [...new Set(thresholds)].sort((a, b) => a - b);
+    return unique.map(px => ({
+      px,
+      mql: window.matchMedia(`(min-width: ${px}px)`)
+    }));
+  }, [thresholds]);
+  const computeMax = () => {
+    let max = 0;
+    for (const {
+      px,
+      mql
+    } of queries) {
+      if (mql.matches) {
+        max = px;
+      }
+    }
+    return max;
+  };
+  const [max, setMax] = (0,external_React_namespaceObject.useState)(computeMax);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const onChange = () => setMax(computeMax());
+    for (const {
+      mql
+    } of queries) {
+      mql.addEventListener("change", onChange);
+    }
+    setMax(computeMax());
+    return () => {
+      for (const {
+        mql
+      } of queries) {
+        mql.removeEventListener("change", onChange);
+      }
+    };
+    // computeMax is recreated each render but closes over the stable
+    // `queries` array, so depending on `queries` alone is correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queries]);
+  return max;
+}
+
+/**
+ * The newtab logo. Renders either the default Firefox logo + wordmark, or a
+ * registered logo variation when one is selected and its environmental
+ * constraints are met.
+ *
+ * Variant selection priority (first non-empty wins):
+ *   1. `prefs.trainhopConfig.logo.variation` (experiment-driven).
+ *   2. `prefs[PREF_LOGO_VARIATION]` (user pref — for local testing).
+ *   3. None → default logo.
+ *
+ * Reduced-motion users still get the variant rendered (statically, at its
+ * frame-0 keyframe state); the variant's click handler is responsible for
+ * not invoking `play()` when motion is suppressed. This keeps the visual
+ * presence consistent across users without forcing animation on anyone.
+ */
 function Logo() {
+  // @backward-compat { version 153 }
+  // The four lines below (useSelector + useMaxMatchedMinWidth + isLTR +
+  // the pickVariant/VariantComponent block) can be removed after Firefox
+  // 153 hits Release. Logo() reverts to a plain render of the default
+  // logo + wordmark.
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const viewportWidth = useMaxMatchedMinWidth(VARIANT_THRESHOLDS);
+  const isLTR = document.dir === "ltr";
+  const trainhopVariant = prefs.trainhopConfig?.logo?.variation;
+  const prefVariant = prefs[PREF_LOGO_VARIATION];
+  const variantId = trainhopVariant || prefVariant || null;
+  const variant = variantId ? pickVariant(variantId, {
+    viewportWidth,
+    isLTR
+  }) : null;
+  const VariantComponent = variant?.component;
   return /*#__PURE__*/external_React_default().createElement("h1", {
     className: "logo-and-wordmark-wrapper"
   }, /*#__PURE__*/external_React_default().createElement("div", {
     className: "logo-and-wordmark",
     role: "img",
     "data-l10n-id": "newtab-logo-and-wordmark"
-  }, /*#__PURE__*/external_React_default().createElement("div", {
+  }, VariantComponent ? /*#__PURE__*/external_React_default().createElement(VariantComponent, null) : /*#__PURE__*/external_React_default().createElement("div", {
     className: "logo"
   }), /*#__PURE__*/external_React_default().createElement("div", {
     className: "wordmark"
@@ -20301,7 +22186,7 @@ const Weather_VISIBLE = "visible";
 const Weather_VISIBILITY_CHANGE_EVENT = "visibilitychange";
 const PREF_SYSTEM_SHOW_WEATHER = "system.showWeather";
 const Weather_PREF_NOVA_ENABLED = "nova.enabled";
-const Weather_Weather_PREF_WEATHER_SIZE = "widgets.weather.size";
+const Weather_PREF_WEATHER_SIZE = "widgets.weather.size";
 function WeatherPlaceholder() {
   const [isSeen, setIsSeen] = (0,external_React_namespaceObject.useState)(false);
 
@@ -20572,7 +22457,7 @@ class _Weather extends (external_React_default()).PureComponent {
       this.props.dispatch(actionCreators.OnlyToMain({
         type: actionTypes.SET_PREF,
         data: {
-          name: Weather_Weather_PREF_WEATHER_SIZE,
+          name: Weather_PREF_WEATHER_SIZE,
           value: size
         }
       }));
@@ -20751,7 +22636,7 @@ class _Weather extends (external_React_default()).PureComponent {
     const showDetailedView = Prefs.values["weather.display"] === "detailed";
     // @nova-cleanup(remove-pref): Remove this line and PREF_NOVA_ENABLED constant
     const novaEnabled = Prefs.values[Weather_PREF_NOVA_ENABLED];
-    const currentWeatherSize = Prefs.values[Weather_Weather_PREF_WEATHER_SIZE] || "large";
+    const currentWeatherSize = Prefs.values[Weather_PREF_WEATHER_SIZE] || "large";
     const nimbusWeatherForecastTrainhopEnabled = Prefs.values.trainhopConfig?.widgets?.weatherForecastEnabled;
     const weatherForecastWidgetEnabled = nimbusWeatherForecastTrainhopEnabled || Prefs.values["widgets.system.weatherForecast.enabled"];
 
@@ -21751,6 +23636,7 @@ function Base_extends() { return Base_extends = Object.assign ? Object.assign.bi
 
 
 
+
 const Base_VISIBLE = "visible";
 const Base_VISIBILITY_CHANGE_EVENT = "visibilitychange";
 const PREF_INFERRED_PERSONALIZATION_SYSTEM = "discoverystream.sections.personalization.inferred.enabled";
@@ -21821,6 +23707,7 @@ class BaseContent extends (external_React_default()).PureComponent {
     this.applyBodyClasses = this.applyBodyClasses.bind(this);
     this.toggleSectionsMgmtPanel = this.toggleSectionsMgmtPanel.bind(this);
     this.toggleWidgetsManagementPanel = this.toggleWidgetsManagementPanel.bind(this);
+    this.openWidgetsPanel = this.openWidgetsPanel.bind(this);
     this.state = {
       fixedSearch: false,
       colorMode: "",
@@ -22153,8 +24040,12 @@ class BaseContent extends (external_React_default()).PureComponent {
   }
   applyBodyClasses() {
     const {
-      body
+      body,
+      documentElement
     } = this.props.document;
+    if (documentElement) {
+      documentElement.classList.toggle("nova-tokens", !!this.props.Prefs.values[Base_PREF_NOVA_ENABLED]);
+    }
     if (!body) {
       return;
     }
@@ -22307,6 +24198,15 @@ class BaseContent extends (external_React_default()).PureComponent {
       showWidgetsManagementPanel: !prevState.showWidgetsManagementPanel
     }));
   }
+  openWidgetsPanel() {
+    this.openCustomizationMenu();
+    if (!this.state.showWidgetsManagementPanel) {
+      this.setState({
+        showWidgetsManagementPanel: true,
+        showSectionsMgmtPanel: false
+      });
+    }
+  }
   shouldDisplayTopicSelectionModal() {
     const prefs = this.props.Prefs.values;
     const pocketEnabled = prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"];
@@ -22361,6 +24261,9 @@ class BaseContent extends (external_React_default()).PureComponent {
     let filteredSections = props.Sections.filter(section => section.id !== "topstories");
     const topSitesEnabled = prefs["feeds.topsites"];
     const pocketEnabled = prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"];
+    // @nova-cleanup(remove): pre-Nova; `filteredSections` is the legacy
+    // Sections redux slice that no longer drives Nova layout. Nova uses
+    // `noContentSectionsEnabled` (declared in the Nova branch below).
     const noSectionsEnabled = !topSitesEnabled && !pocketEnabled && filteredSections.filter(section => section.enabled).length === 0;
     const enabledSections = {
       topSitesEnabled,
@@ -22387,7 +24290,6 @@ class BaseContent extends (external_React_default()).PureComponent {
     const mayHaveListsWidget = prefs["widgets.system.lists.enabled"] || nimbusListsEnabled || nimbusListsTrainhopEnabled;
     const mayHaveTimerWidget = prefs["widgets.system.focusTimer.enabled"] || nimbusTimerEnabled || nimbusTimerTrainhopEnabled;
     const mayHaveClocksWidget = prefs["widgets.system.clocks.enabled"] || nimbusClocksEnabled || nimbusClocksTrainhopEnabled;
-    const mayHaveWeatherWidget = prefs["widgets.system.weather.enabled"] || prefs.trainhopConfig?.widgets?.weatherEnabled;
     const nimbusSportsWidgetEnabled = prefs.widgetsConfig?.sportsWidgetEnabled;
     const nimbusSportsWidgetTrainhopEnabled = prefs.trainhopConfig?.widgets?.sportsWidgetEnabled;
     const mayHaveSportsWidget = prefs["widgets.system.sportsWidget.enabled"] || nimbusSportsWidgetEnabled || nimbusSportsWidgetTrainhopEnabled;
@@ -22438,6 +24340,9 @@ class BaseContent extends (external_React_default()).PureComponent {
       messageData: this.props.Messages.messageData,
       className: "asrouter-multistage-message-wrapper"
     }))) : null;
+    const baseContextValue = {
+      openWidgetsPanel: this.openWidgetsPanel
+    };
 
     // @nova-cleanup(remove-conditional): Remove this conditional and
     // always render the Nova layout below. The classic render() return
@@ -22445,26 +24350,36 @@ class BaseContent extends (external_React_default()).PureComponent {
     //  mobileDownloadPromo*, etc.) will become dead code and should
     // be deleted — expect lint errors for unused vars.
     if (novaEnabled) {
-      // Logo renders in .content (above search/topsites) when no Pocket content
-      // feed and no content-area widgets are present. When either is enabled,
-      // the sidebar provides a better visual anchor.
+      // Logo placement: when there's no Pocket feed and no content-area
+      // widget, the Logo renders centered in .content; otherwise it
+      // anchors the inline-start sidebar. If the page has nothing on it
+      // (no content sections, no search, no widgets), the Logo is
+      // suppressed entirely via `isPageEmpty`.
       const weatherWidget = WIDGET_REGISTRY.find(w => w.id === "weather");
       const weatherGoesToSidebar = resolveWidgetHasSidebar(weatherWidget, prefs) && resolveWidgetSize(weatherWidget, prefs) === "small";
-      const hasContentWidgets = mayHaveListsWidget && enabledWidgets.listsEnabled || mayHaveTimerWidget && enabledWidgets.timerEnabled || mayHaveClocksWidget && enabledWidgets.clocksEnabled || mayHaveWeatherWidget && enabledWidgets.weatherEnabled && !weatherGoesToSidebar || mayHaveSportsWidget && enabledWidgets.sportsWidgetEnabled;
-      const logoShouldBeCentered = !pocketEnabled && !hasContentWidgets;
-      return /*#__PURE__*/external_React_default().createElement("div", {
+      const widgetsEnabled = prefs["widgets.enabled"];
+      const hasAnyEnabledWidget = WIDGET_REGISTRY.some(w => isWidgetEnabled(w, prefs, widgetsEnabled));
+      const hasContentWidgets = WIDGET_REGISTRY.some(w => isWidgetEnabled(w, prefs, widgetsEnabled) && !(w.id === "weather" && weatherGoesToSidebar));
+      const highlightsEnabled = prefs["feeds.section.highlights"];
+      const noContentSectionsEnabled = !topSitesEnabled && !pocketEnabled && !highlightsEnabled;
+      const isPageEmpty = noContentSectionsEnabled && !prefs.showSearch && !hasAnyEnabledWidget;
+      const hasManyTopSitesRows = topSitesEnabled && prefs.topSitesRows > 2;
+      const logoShouldBeCentered = !pocketEnabled && !hasContentWidgets && !hasManyTopSitesRows;
+      return /*#__PURE__*/external_React_default().createElement(BaseContext.Provider, {
+        value: baseContextValue
+      }, /*#__PURE__*/external_React_default().createElement("div", {
         className: "nova-outer-wrapper"
       }, /*#__PURE__*/external_React_default().createElement("div", {
         className: `container nova-enabled${logoShouldBeCentered ? " logo-in-content" : ""}`
       }, /*#__PURE__*/external_React_default().createElement("aside", {
         className: "sidebar-inline-start"
-      }, !logoShouldBeCentered && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Logo, null))), /*#__PURE__*/external_React_default().createElement("aside", {
+      }, !prefs.hideLogo && !logoShouldBeCentered && !isPageEmpty && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Logo, null))), /*#__PURE__*/external_React_default().createElement("aside", {
         className: "sidebar-inline-end"
       }, novaEnabled && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(WidgetsSidebar, {
         dispatch: props.dispatch
       }))), /*#__PURE__*/external_React_default().createElement("main", {
         className: "content"
-      }, logoShouldBeCentered && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Logo, null)), prefs.showSearch && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Search_Search, Base_extends({
+      }, !prefs.hideLogo && logoShouldBeCentered && !isPageEmpty && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Logo, null)), prefs.showSearch && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Search_Search, Base_extends({
         showLogo: false
       }, props.Search))), shouldShowASRouterNewTabMessage(this.props.Messages, "ASRouterNewTabMessage", ASROUTER_NEWTAB_MESSAGE_POSITIONS.ABOVE_TOPSITES) && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
         dispatch: this.props.dispatch
@@ -22531,11 +24446,13 @@ class BaseContent extends (external_React_default()).PureComponent {
         dispatch: this.props.dispatch
       }))), this.props.Notifications?.showNotifications && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Notifications_Notifications, {
         dispatch: this.props.dispatch
-      })));
+      }))));
     }
 
     // @nova-cleanup(remove-conditional): Delete this entire classic return block along with all variables only used here
-    return /*#__PURE__*/external_React_default().createElement("div", {
+    return /*#__PURE__*/external_React_default().createElement(BaseContext.Provider, {
+      value: baseContextValue
+    }, /*#__PURE__*/external_React_default().createElement("div", {
       className: featureClassName
     }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "weatherWrapper"
@@ -22613,7 +24530,7 @@ class BaseContent extends (external_React_default()).PureComponent {
     }, /*#__PURE__*/external_React_default().createElement(WallpaperFeatureHighlight, {
       position: "inset-block-start inset-inline-start",
       dispatch: this.props.dispatch
-    }))));
+    })))));
   }
 }
 BaseContent.defaultProps = {
